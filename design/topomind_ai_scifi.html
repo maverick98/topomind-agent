@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>TopoMind AI Control Interface</title>
+<style>
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at center, #0f172a, #020617);
+  color: white;
+  overflow-x: hidden;
+}
+
+/* PARTICLE CANVAS */
+#particles {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+}
+
+/* TITLE */
+.title {
+  text-align: center;
+  font-size: 40px;
+  margin: 20px;
+  color: #38bdf8;
+  text-shadow: 0 0 20px #38bdf8;
+}
+
+/* MENTAL MODEL PANEL */
+.model-panel {
+  margin: 20px auto;
+  padding: 14px 18px;
+  width: 90%;
+  max-width: 800px;
+  border-radius: 14px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 15px;
+  background: linear-gradient(90deg, #38bdf8, #22c55e, #f97316, #a855f7);
+  color: white;
+  animation: glow 3s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+  from { transform: scale(1); box-shadow: 0 0 10px #38bdf8; }
+  to { transform: scale(1.03); box-shadow: 0 0 25px #f97316; }
+}
+
+/* LAYOUT */
+.container { display: flex; flex-direction: column; align-items: center; }
+.row { display: flex; justify-content: center; align-items: center; margin: 30px 0; }
+
+/* BOXES */
+.box {
+  padding: 18px 26px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  margin: 0 20px;
+  min-width: 220px;
+  text-align: center;
+  position: relative;
+  cursor: pointer;
+  animation: float 5s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(56,189,248,0.4);
+}
+
+/* NEON EDGE */
+.box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  background: linear-gradient(120deg, #38bdf8, #a855f7, #f97316) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: edgePulse 4s linear infinite;
+}
+
+@keyframes edgePulse {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+  100% { transform: translateY(0px); }
+}
+
+/* HOVER GLOW */
+.box:hover { transform: scale(1.05); box-shadow: 0 0 40px #38bdf8; }
+
+/* TOOLTIP */
+.box:hover::after {
+  content: attr(data-info);
+  position: absolute;
+  bottom: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0ea5e9;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  width: 230px;
+}
+
+/* FLOW */
+.flow { width: 6px; height: 60px; background: linear-gradient(#38bdf8, transparent); position: relative; }
+
+/* DATA PACKET */
+.packet {
+  width: 10px;
+  height: 10px;
+  background: #f97316;
+  border-radius: 50%;
+  position: absolute;
+  left: -2px;
+  animation: movePacket 2s linear infinite;
+}
+
+@keyframes movePacket {
+  0% { top: 0; opacity: 0; }
+  20% { opacity: 1; }
+  100% { top: 50px; opacity: 0; }
+}
+
+/* MEMORY ORBIT */
+.memory { display: flex; gap: 10px; margin-top: 10px; animation: rotateMem 6s linear infinite; }
+.node { width: 14px; height: 14px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 10px #22d3ee; }
+
+@keyframes rotateMem { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.note { text-align: center; margin: 40px; color: #94a3b8; }
+</style>
+</head>
+
+<body>
+
+<canvas id="particles"></canvas>
+
+<div class="title">TopoMind AI Cognitive Control</div>
+
+<div class="model-panel">
+🧠 Tool = What • Connector = How • Planner = When • Agent = Who
+</div>
+
+<div class="container">
+
+<div class="row">
+  <div class="box" data-info="Coordinates memory, planning and execution."><b>Agent Core</b></div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="LLM or rule engine decides actions."><b>Planner</b></div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Defines capability available."><b>Tool</b></div>
+  <div class="box" data-info="Implements execution."><b>Connector</b></div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Conversation structure.">
+    <b>Memory Graph</b>
+    <div class="memory">
+      <div class="node"></div><div class="node"></div><div class="node"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="note">Live AI System Visualization • Hybrid Symbolic + LLM Architecture</div>
+
+<script>
+const canvas = document.getElementById('particles');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let particles = [];
+for(let i=0;i<70;i++){
+  particles.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*2+1,dx:(Math.random()-0.5),dy:(Math.random()-0.5)});
+}
+
+function animate(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#38bdf8";
+  particles.forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fill();
+    p.x+=p.dx; p.y+=p.dy;
+    if(p.x<0||p.x>canvas.width)p.dx*=-1;
+    if(p.y<0||p.y>canvas.height)p.dy*=-1;
+  });
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+</body>
+</html>

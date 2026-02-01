@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>TopoMind Interactive AI Flow</title>
+<style>
+.model-panel {
+  margin: 40px auto;
+  padding: 15px 20px;
+  width: 90%;
+  max-width: 700px;
+  border-radius: 14px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 16px;
+  background: linear-gradient(90deg, #38bdf8, #22c55e, #f97316, #a855f7);
+  color: white;
+  box-shadow: 0 0 20px rgba(0,0,0,0.15);
+  animation: glow 3s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+  from { transform: scale(1); box-shadow: 0 0 10px rgba(56,189,248,0.6); }
+  to { transform: scale(1.03); box-shadow: 0 0 25px rgba(249,115,22,0.8); }
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, #e0f2fe, #fef9c3);
+  color: #1e293b;
+}
+
+.title {
+  text-align: center;
+  font-size: 36px;
+  margin: 20px;
+  color: #0284c7;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 25px 0;
+}
+
+.box {
+  padding: 18px 26px;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+  margin: 0 18px;
+  min-width: 200px;
+  text-align: center;
+  border-left: 6px solid #38bdf8;
+  position: relative;
+  cursor: pointer;
+}
+
+/* Tooltips */
+.box:hover::after {
+  content: attr(data-info);
+  position: absolute;
+  bottom: -70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0ea5e9;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  width: 220px;
+  text-align: center;
+}
+
+/* Flow line */
+.flow {
+  width: 6px;
+  height: 50px;
+  background: linear-gradient(#38bdf8, transparent);
+  border-radius: 3px;
+  position: relative;
+}
+
+/* Data packet */
+.packet {
+  width: 10px;
+  height: 10px;
+  background: #f97316;
+  border-radius: 50%;
+  position: absolute;
+  left: -2px;
+  animation: movePacket 2s linear infinite;
+}
+
+@keyframes movePacket {
+  0% { top: 0; opacity: 0; }
+  20% { opacity: 1; }
+  100% { top: 40px; opacity: 0; }
+}
+
+/* Memory nodes */
+.memory {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.node {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #22d3ee;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.5; }
+}
+
+/* Legend */
+.legend {
+  margin-top: 40px;
+  padding: 15px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  width: 80%;
+  max-width: 600px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.color-box {
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+  border-radius: 4px;
+}
+
+.note {
+  text-align: center;
+  margin: 30px;
+  color: #64748b;
+  font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<div class="title">TopoMind Interactive Cognitive Flow</div>
+
+<div class="container">
+<div class="model-panel">
+🧠 Mental Model → 
+Tool = What can be done • 
+Connector = How it is done • 
+Planner = When it should be done • 
+Agent = Who coordinates everything
+</div>
+<div class="row">
+  <div class="box" data-info="User provides natural language input.">
+    <b>User</b><br/>Query
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Orchestrates memory, planning, execution.">
+    <b>Agent Core</b>
+  </div>
+</div>
+
+<div class="row">
+  <div class="box" data-info="Stores conversation in structured form.">
+    <b>Memory Graph</b>
+    <div class="memory">
+      <div class="node"></div><div class="node"></div><div class="node"></div>
+    </div>
+  </div>
+  <div class="box" data-info="Detects persistent topics across turns.">
+    <b>Stability Signals</b>
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="LLM or rule engine decides which tool to use.">
+    <b>Planner</b>
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Structured machine-readable action.">
+    <b>Plan</b>
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Validates tool and routes to connector.">
+    <b>Tool Executor</b>
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Defines what action is possible.">
+    <b>Tool</b>
+  </div>
+  <div class="box" data-info="Implements how the action runs.">
+    <b>Connector</b>
+  </div>
+</div>
+
+<div class="flow"><div class="packet"></div></div>
+
+<div class="row">
+  <div class="box" data-info="Result returned to user and stored in memory.">
+    <b>Result</b>
+  </div>
+</div>
+
+</div>
+
+<div class="legend">
+  <b>Legend</b>
+  <div class="legend-item"><div class="color-box" style="background:#38bdf8"></div>System Components</div>
+  <div class="legend-item"><div class="color-box" style="background:#f97316"></div>Data Packets</div>
+  <div class="legend-item"><div class="color-box" style="background:#22d3ee"></div>Memory Nodes</div>
+</div>
+
+<div class="note">
+Hover over boxes to learn each component's role.
+</div>
+
+</body>
+</html>
