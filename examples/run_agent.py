@@ -1,9 +1,3 @@
-import sys
-import os
-
-# Add project root to Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from topomind.agent.core import Agent
 from topomind.tools.executor import ToolExecutor
 from topomind.tools.registry import ToolRegistry
@@ -13,14 +7,22 @@ from topomind.connectors.manager import ConnectorManager
 from topomind.config import AgentConfig
 from topomind.planner.factory import create_planner
 
+
+# ------------------------------------------------
+# Choose planner mode here
+# ------------------------------------------------
+PLANNER_MODE = "ollama"   # "rule" or "ollama"
+OLLAMA_MODEL = "mistral"
+
+
 # -------------------------------
-# Consumer registers connectors
+# Register connectors
 # -------------------------------
 connectors = ConnectorManager()
 connectors.register("local", FakeConnector())
 
 # -------------------------------
-# Consumer registers tools
+# Register tools
 # -------------------------------
 registry = ToolRegistry()
 registry.register(Tool(
@@ -34,7 +36,11 @@ registry.register(Tool(
 # -------------------------------
 # Planner configuration
 # -------------------------------
-config = AgentConfig(planner_type="ollama", model="mistral")  
+if PLANNER_MODE == "ollama":
+    config = AgentConfig(planner_type="ollama", model=OLLAMA_MODEL)
+else:
+    config = AgentConfig(planner_type="rule")
+
 planner = create_planner(config)
 
 # -------------------------------
@@ -46,13 +52,17 @@ agent = Agent(planner, executor)
 # -------------------------------
 # Multi-turn interaction
 # -------------------------------
+print("\n=== Conversation Start ===\n")
+
 print(agent.handle_query("What is Quantum Mechanics?"))
-print(agent.handle_query("Who laid its foundations"))
+print(agent.handle_query("Who laid its foundations?"))
 print(agent.handle_query("What is Bohr Einstein debate?"))
+
+print("\n=== Conversation End ===")
 
 # -------------------------------
 # Inspect memory
 # -------------------------------
 print("\n--- Memory State ---")
-for node in agent.memory.nodes.values():
+for node in agent.memory.nodes():
     print(f"Type: {node.type}, Value: {node.value}, Turn: {node.turn_created}")

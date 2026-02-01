@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class Edge:
+    """
+    Directed relationship between two nodes in the memory graph.
+    """
+
     source: str
     target: str
-    relation: str  # supports, refines, derived_from, contradicts
+    relation: str
