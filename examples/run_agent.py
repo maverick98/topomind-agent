@@ -1,68 +1,55 @@
-from topomind.agent.core import Agent
-from topomind.tools.executor import ToolExecutor
+from topomind import TopoMindApp
 from topomind.tools.registry import ToolRegistry
 from topomind.tools.schema import Tool
-from topomind.connectors.base import FakeConnector
 from topomind.connectors.manager import ConnectorManager
-from topomind.config import AgentConfig
-from topomind.planner.factory import create_planner
+from topomind.connectors.base import FakeConnector
 
 
-# ------------------------------------------------
-# Choose planner mode here
-# ------------------------------------------------
-PLANNER_MODE = "ollama"   # "rule" or "ollama"
-OLLAMA_MODEL = "mistral"
+# --------------------------------
+# Consumer infrastructure
+# --------------------------------
 
-
-# -------------------------------
-# Register connectors
-# -------------------------------
 connectors = ConnectorManager()
 connectors.register("local", FakeConnector())
 
-# -------------------------------
-# Register tools
-# -------------------------------
 registry = ToolRegistry()
-registry.register(Tool(
-    name="echo",
-    description="Echo back text",
-    input_schema={"text": "string"},
-    output_schema={"text": "string"},
-    connector_name="local"
-))
+registry.register(
+    Tool(
+        name="echo",
+        description="Echo back text",
+        input_schema={"text": "string"},
+        output_schema={"text": "string"},
+        connector_name="local",
+    )
+)
 
-# -------------------------------
-# Planner configuration
-# -------------------------------
-if PLANNER_MODE == "ollama":
-    config = AgentConfig(planner_type="ollama", model=OLLAMA_MODEL)
-else:
-    config = AgentConfig(planner_type="rule")
+# --------------------------------
+# Create Agent (ONE LINE 🎯)
+# --------------------------------
 
-planner = create_planner(config)
+agent = TopoMindApp.create(
+    planner_type="ollama",     # or "rule"
+    model="mistral",
+    connectors=connectors,
+    registry=registry,
+)
 
-# -------------------------------
-# Setup Agent
-# -------------------------------
-executor = ToolExecutor(registry, connectors)
-agent = Agent(planner, executor)
+# --------------------------------
+# Run conversation
+# --------------------------------
 
-# -------------------------------
-# Multi-turn interaction
-# -------------------------------
 print("\n=== Conversation Start ===\n")
 
 print(agent.handle_query("What is Quantum Mechanics?"))
 print(agent.handle_query("Who laid its foundations?"))
 print(agent.handle_query("What is Bohr Einstein debate?"))
 
-print("\n=== Conversation End ===")
+print("\n=== Conversation End ===\n")
 
-# -------------------------------
+# --------------------------------
 # Inspect memory
-# -------------------------------
-print("\n--- Memory State ---")
+# --------------------------------
+
+print("--- Memory State ---")
 for node in agent.memory.nodes():
-    print(f"Type: {node.type}, Value: {node.value}, Turn: {node.turn_created}")
+    print(f"Type={node.type}, Turn={node.turn_created}, Value={node.value}")

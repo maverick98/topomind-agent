@@ -1,3 +1,4 @@
+import logging
 from ..planner.interface import ReasoningEngine
 from ..planner.plan_model import Plan
 from ..tools.executor import ToolExecutor
@@ -7,13 +8,14 @@ from ..stability.signals import StabilitySignals
 from ..models.observation import Observation
 from .state import AgentState
 
+logger = logging.getLogger(__name__)
+
 
 class Agent:
     """
     TopoMind Agent Core
 
-    Orchestrates the full cognitive loop:
-
+    Cognitive loop:
         Input → Memory → Stability → Planning → Execution → Memory
                         ↘ Session State ↙
     """
@@ -22,73 +24,62 @@ class Agent:
         self.planner = planner
         self.executor = executor
 
-        # Long-term structured memory
         self.memory = MemoryGraph()
         self.memory_updater = MemoryUpdater(self.memory)
-
-        # Stability analysis
         self.stability = StabilitySignals(self.memory)
 
-        # Tool registry
+        # Read-only access
         self.registry = executor.registry
 
-        # Short-term session state
         self.state = AgentState()
 
-    # ------------------------------------------------------------------
-    # Main Interaction Loop
-    # ------------------------------------------------------------------
-
     def handle_query(self, user_input: str):
-        """
-        Process a single user turn through the cognitive pipeline.
-        """
+        logger.info(f"New turn: {user_input}")
 
-        # --- 0. Session bookkeeping ---
+        # --- Session ---
         self.state.new_turn(user_input)
 
-        # --- 1. Store user input as observation ---
+        # --- User Observation ---
         user_obs = Observation(
-                                source="user",
-                                type="entity",
-                                payload=user_input,
-                                metadata={}
-                            )
-
+            source="user",
+            type="entity",
+            payload=user_input,
+            metadata={}
+        )
         self.memory_updater.update_from_observation(user_obs)
 
-        # --- 2. Extract stability signals ---
+        # --- Stability ---
         signals = self.stability.extract()
+        logger.debug(f"Signals: {signals}")
 
-        # --- 3. Planner receives available tools ---
+        # --- Planning ---
         tools = self.registry.list_tools()
-
-        # --- 4. Generate structured plan ---
         plan: Plan = self.planner.generate_plan(user_input, signals, tools)
         self.state.record_plan(plan)
 
         if plan.is_empty():
+            self.state.record_failure("Empty plan")
             return {"error": "Planner produced no action"}
 
         step = plan.first_step
+        if not step.action:
+            return {"error": "Invalid plan step"}
+
         self.state.last_tool_call = step.action
 
-        # --- 5. Execute tool ---
-        result = self.executor.execute(
-                            step.action.tool_name,
-                            step.action.arguments
-        )
-
+        # --- Execution ---
+        logger.info(f"Executing tool: {step.action.tool_name}")
+        result = self.executor.execute(step.action.tool_name, step.action.arguments)
         self.state.record_execution(step.action, result)
 
-        # --- 6. Store tool result in memory ---
+        # --- Store Result ---
         tool_obs = Observation(
-                                source="tool",
-                                type="result",
-                                payload=result,
-                                metadata={}
+            source="tool",
+            type="result",
+            payload=result,
+            metadata={}
         )
-
         self.memory_updater.update_from_observation(tool_obs)
 
+        logger.debug(f"Execution result: {result}")
         return result
