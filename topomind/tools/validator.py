@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 from .registry import ToolRegistry
 
@@ -13,9 +13,9 @@ class ArgumentValidationError(Exception):
 class ArgumentValidator:
     """
     Validates tool arguments against tool input schemas.
-
-    This prevents hallucinated parameters and enforces
-    deterministic contracts before execution.
+    Supports:
+    - Optional fields via '?'
+    - list[number] style hints
     """
 
     def __init__(self, registry: ToolRegistry) -> None:
@@ -26,11 +26,7 @@ class ArgumentValidator:
     # ------------------------------------------------------------------
 
     def validate(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate arguments for a tool call.
 
-        Returns sanitized args or raises ArgumentValidationError.
-        """
         schema = self._registry.get_input_schema(tool_name)
 
         if not isinstance(args, dict):
@@ -40,14 +36,21 @@ class ArgumentValidator:
         self._check_unknown(schema, args)
         self._check_types(schema, args)
 
-        return args  # sanitized (future: coercion here)
+        return args
 
     # ------------------------------------------------------------------
     # Validation Steps
     # ------------------------------------------------------------------
 
     def _check_required(self, schema: Dict[str, Any], args: Dict[str, Any]) -> None:
-        missing = [k for k in schema if k not in args]
+        missing = []
+
+        for key, expected_type in schema.items():
+            is_optional = isinstance(expected_type, str) and expected_type.endswith("?")
+
+            if not is_optional and key not in args:
+                missing.append(key)
+
         if missing:
             raise ArgumentValidationError(f"Missing required arguments: {missing}")
 
@@ -57,12 +60,23 @@ class ArgumentValidator:
             raise ArgumentValidationError(f"Unknown arguments: {extra}")
 
     def _check_types(self, schema: Dict[str, Any], args: Dict[str, Any]) -> None:
+
         for key, expected_type in schema.items():
+
+            if key not in args:
+                continue  # optional and not present
+
+            clean_expected = (
+                expected_type.rstrip("?")
+                if isinstance(expected_type, str)
+                else expected_type
+            )
+
             value = args[key]
 
-            if not self._matches_type(expected_type, value):
+            if not self._matches_type(clean_expected, value):
                 raise ArgumentValidationError(
-                    f"Argument '{key}' expected type {expected_type}, got {type(value).__name__}"
+                    f"Argument '{key}' expected type {clean_expected}, got {type(value).__name__}"
                 )
 
     # ------------------------------------------------------------------
@@ -70,18 +84,23 @@ class ArgumentValidator:
     # ------------------------------------------------------------------
 
     def _matches_type(self, expected: Any, value: Any) -> bool:
-        """
-        Supports simple string type hints or Python types.
-        """
+
         if isinstance(expected, str):
             return self._string_type_match(expected, value)
 
         if isinstance(expected, type):
             return isinstance(value, expected)
 
-        return True  # Unknown schema type → don't block
+        return True
 
     def _string_type_match(self, expected: str, value: Any) -> bool:
+
+        expected = expected.lower()
+
+        # -------------------------
+        # Simple types
+        # -------------------------
+
         mapping = {
             "string": str,
             "int": int,
@@ -91,8 +110,21 @@ class ArgumentValidator:
             "list": list,
         }
 
-        expected_type = mapping.get(expected.lower())
-        if expected_type is None:
-            return True  # unknown schema spec → allow
+        if expected in mapping:
+            return isinstance(value, mapping[expected])
 
-        return isinstance(value, expected_type)
+        # -------------------------
+        # list[number]
+        # -------------------------
+
+        if expected == "list[number]":
+            if not isinstance(value, list):
+                return False
+            return all(isinstance(v, (int, float)) for v in value)
+
+        if expected == "list[string]":
+            if not isinstance(value, list):
+                return False
+            return all(isinstance(v, str) for v in value)
+
+        return True  # Unknown spec → allow
