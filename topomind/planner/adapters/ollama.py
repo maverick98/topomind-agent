@@ -92,7 +92,7 @@ Available tools:
             tool_name = result.get("tool", "echo")
             args = result.get("args", {})
 
-            print("\n🧠 ================= PLANNER DECISION =================")
+            print("\n ================= PLANNER DECISION =================")
             print(f"User Input   : {user_input}")
             print(f"Signals      : {signals}")
             print(f"Chosen Tool  : {tool_name}")
