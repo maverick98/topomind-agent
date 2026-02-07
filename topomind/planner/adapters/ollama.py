@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaPlanner(ReasoningEngine):
+    """
+    LLM-based planner that decides WHICH TOOL to use.
+    It NEVER produces final answers.
+    """
 
     def __init__(self, model: str = "mistral"):
         self.model = model
@@ -72,6 +76,14 @@ Available tools:
 
         try:
             result = json.loads(text)
+            print(f"result as recvd {result}")
+            tool_name = result.get("tool", "echo")
+            print(f"tool_name is {tool_name}")
+            # CRITICAL: LLM chooses tool, system controls arguments
+            if tool_name == "reason":
+                args = {"question": user_input}
+            else:
+                args = result.get("args", {})
 
             logger.info(f"[PLANNER] Tool chosen: {result.get('tool')}")
             logger.info(f"[PLANNER] Confidence: {result.get('confidence')}")
