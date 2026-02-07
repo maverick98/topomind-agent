@@ -81,19 +81,47 @@ agent = TopoMindApp.create(
 
 print("\n=== Conversation Start ===\n")
 
+# ---- Arithmetic ----
 print(agent.handle_query("What is 25 * 48 + 10?"))
 print(agent.handle_query("Calculate math.sqrt(144) + 5"))
-print(agent.handle_query("Repeat: Hello TopoMind"))
 print(agent.handle_query("What is 7 squared?"))
-print(agent.handle_query("Tell me about Einstein"))
-print(agent.handle_query("What is 100 / 4 - 3?"))
 
-# New built-in capabilities
-print(agent.handle_query("Find mean of [10, 20, 30, 40]"))
-print(agent.handle_query("Find correlation between [1,2,3] and [2,4,6]"))
-print(agent.handle_query("Compute moving average of [10,20,30,40,50] with window 2"))
+# ---- Descriptive Stats ----
+print(agent.handle_query("Find MEAN of [10, 20, 30, 40]"))
+print(agent.handle_query("Find STD_DEV_SAMPLE of [10, 20, 30, 40]"))
+print(agent.handle_query("Find VARIANCE of [10, 20, 30, 40]"))
+print(agent.handle_query("Find MEDIAN of [10, 20, 30, 40]"))
+
+# ---- Normalization ----
+print(agent.handle_query("Compute Z_SCORE of [10, 20, 30, 40]"))
+print(agent.handle_query("Compute COEFFICIENT_OF_VARIATION of [10, 20, 30, 40]"))
+
+# ---- Relationship ----
+print(agent.handle_query("Find COVARIANCE between [1,2,3] and [2,4,6]"))
+print(agent.handle_query("Find CORRELATION between [1,2,3] and [2,4,6]"))
+
+# ---- Regression ----
+print(agent.handle_query("Find TREND_SLOPE for x=[1,2,3,4] and y=[2,4,6,8]"))
+print(agent.handle_query("Find REGRESSION_INTERCEPT for x=[1,2,3,4] and y=[2,4,6,8]"))
+print(agent.handle_query("Find R_SQUARED for x=[1,2,3,4] and y=[2,4,6,8]"))
+print(agent.handle_query("Find ADJUSTED_R_SQUARED for x=[1,2,3,4] and y=[2,4,6,8]"))
+
+# ---- Time Series Diagnostics ----
+print(agent.handle_query("Compute AUTOCORRELATION of [10,20,30,40,50]"))
+print(agent.handle_query("Compute LJUNG_BOX of [10,20,30,40,50] with lag 1"))
+
+# ---- Error Metrics ----
+print(agent.handle_query("Compute RMSE for actual=[10,20,30] and predicted=[12,18,29]"))
+print(agent.handle_query("Compute MAPE for actual=[10,20,30] and predicted=[12,18,29]"))
+
+# ---- Data Preprocessing ----
+print(agent.handle_query("Find CLEAN_START_INDEX of [None,None,5,6,7]"))
+
+# ---- Anomaly Detection ----
+print(agent.handle_query("Perform OUTLIER_DETECTION on [10, 12, 11, 200, 13]"))
 
 print("\n=== Conversation End ===\n")
+
 
 # --------------------------------
 # Inspect memory
