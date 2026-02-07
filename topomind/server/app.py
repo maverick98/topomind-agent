@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from topomind import TopoMindApp
 from topomind.tools.registry import ToolRegistry
 from topomind.tools.schema import Tool
@@ -10,68 +12,69 @@ from topomind.connectors.base import FakeConnector
 from topomind.connectors.ollama import OllamaConnector
 from topomind.builtin.analytics import register_builtin_analytics
 
-from fastapi.middleware.cors import CORSMiddleware
 
 # ============================================================
-# Agent Factory
+# Agent Manager (Holds Connectors + Registry + Agent)
 # ============================================================
 
-def build_agent(
-    extra_connectors: Optional[Dict[str, Any]] = None,
-    extra_tools: Optional[List[Tool]] = None,
-) -> TopoMindApp:
-    """
-    Builds TopoMind agent with optional external connectors and tools.
-    """
+class AgentManager:
+    def __init__(self):
+        self.connectors = ConnectorManager()
+        self.registry = ToolRegistry()
+        self._initialize_core()
+        self._build_agent()
 
-    connectors = ConnectorManager()
+    def _initialize_core(self):
+        # Core connectors
+        self.connectors.register("local", FakeConnector())
+        self.connectors.register("llm", OllamaConnector(model="mistral"))
 
-    # Core connectors
-    connectors.register("local", FakeConnector())
-    connectors.register("llm", OllamaConnector(model="mistral"))
+        # Built-in tools
+        register_builtin_analytics(
+            connectors=self.connectors,
+            registry=self.registry,
+        )
 
-    # Consumer-provided connectors
-    if extra_connectors:
-        for name, connector in extra_connectors.items():
-            connectors.register(name, connector)
+    def _build_agent(self):
+        self.agent = TopoMindApp.create(
+            planner_type="ollama",
+            model="mistral",
+            connectors=self.connectors,
+            registry=self.registry,
+        )
 
-    registry = ToolRegistry()
+    def get_agent(self):
+        return self.agent
 
-    # Built-in analytics
-    register_builtin_analytics(connectors=connectors, registry=registry)
+    def register_tool(self, tool: Tool):
+        self.registry.register(tool)
 
-    # Consumer-provided tools
-    if extra_tools:
-        registry.register_many(extra_tools)
-
-    return TopoMindApp.create(
-        planner_type="ollama",
-        model="mistral",
-        connectors=connectors,
-        registry=registry,
-    )
+    def register_connector(self, name: str, connector: Any):
+        self.connectors.register(name, connector)
 
 
 # ============================================================
-# Create Agent Instance (Singleton)
+# Instantiate Manager (Singleton)
 # ============================================================
 
-agent = build_agent()
+manager = AgentManager()
+agent = manager.get_agent()
 
 
 # ============================================================
 # FastAPI App
 # ============================================================
 
-app = FastAPI(title="TopoMind API", version="1.0.0")
+app = FastAPI(title="TopoMind API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for testing only
+    allow_origins=["*"],  # ⚠ for testing only
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ============================================================
 # Request / Response Models
@@ -86,6 +89,19 @@ class QueryResponse(BaseModel):
     tool: Optional[str]
     output: Optional[Any]
     error: Optional[str]
+
+
+class ToolRegistrationRequest(BaseModel):
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+    connector: str
+
+
+class ConnectorRegistrationRequest(BaseModel):
+    name: str
+    type: str  # "ollama"
+    model: Optional[str] = None
 
 
 # ============================================================
@@ -103,7 +119,7 @@ def health():
 
 @app.get("/capabilities")
 def capabilities():
-    tools = agent.registry.list_tool_names()
+    tools = manager.registry.list_tool_names()
     return {
         "tool_count": len(tools),
         "tools": tools,
@@ -111,7 +127,7 @@ def capabilities():
 
 
 # ============================================================
-# Main Query Endpoint
+# Query Endpoint
 # ============================================================
 
 @app.post("/query", response_model=QueryResponse)
@@ -126,6 +142,58 @@ def query_endpoint(request: QueryRequest):
             output=result.output,
             error=result.error,
         )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Register Tool Endpoint
+# ============================================================
+
+@app.post("/register-tool")
+def register_tool(request: ToolRegistrationRequest):
+
+    try:
+        tool = Tool(
+            name=request.name,
+            description=request.description,
+            input_schema=request.input_schema,
+            connector=request.connector,
+        )
+
+        manager.register_tool(tool)
+
+        return {
+            "status": "registered",
+            "tool": request.name,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Register Connector Endpoint
+# ============================================================
+
+@app.post("/register-connector")
+def register_connector(request: ConnectorRegistrationRequest):
+
+    try:
+        if request.type == "ollama":
+            connector = OllamaConnector(
+                model=request.model or "mistral"
+            )
+        else:
+            raise ValueError(f"Unsupported connector type: {request.type}")
+
+        manager.register_connector(request.name, connector)
+
+        return {
+            "status": "registered",
+            "connector": request.name,
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

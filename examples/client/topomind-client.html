@@ -1,11 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>TopoMind Client</title>
+    <title>TopoMind Control Panel</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 40px;
+            background: #fafafa;
+        }
+
+        h2 {
+            margin-top: 40px;
         }
 
         textarea {
@@ -14,8 +19,14 @@
             font-size: 14px;
         }
 
+        input {
+            width: 100%;
+            padding: 6px;
+            margin-top: 6px;
+        }
+
         button {
-            padding: 10px 20px;
+            padding: 8px 16px;
             margin-top: 10px;
             cursor: pointer;
         }
@@ -24,14 +35,28 @@
             background: #f4f4f4;
             padding: 15px;
             border-radius: 5px;
+            overflow-x: auto;
+        }
+
+        .section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
     </style>
 </head>
 <body>
 
-<h2>TopoMind Web Client</h2>
+<h1>TopoMind Web Control Panel</h1>
 
-<textarea id="queryInput" placeholder="Enter your query...">
+<!-- ===================== QUERY SECTION ===================== -->
+
+<div class="section">
+<h2>Query</h2>
+
+<textarea id="queryInput">
 Please Evaluate quarterly revenue growth trend using TREND_SLOPE and R_SQUARED for x=[1,2,3,4] and y=[12000,13500,15000,17000]
 </textarea>
 
@@ -39,39 +64,160 @@ Please Evaluate quarterly revenue growth trend using TREND_SLOPE and R_SQUARED f
 <button onclick="sendQuery()">Send Query</button>
 
 <h3>Response</h3>
-<pre id="responseOutput">Waiting...</pre>
+<pre id="queryResponse">Waiting...</pre>
+</div>
+
+
+<!-- ===================== CAPABILITIES ===================== -->
+
+<div class="section">
+<h2>Capabilities</h2>
+
+<button onclick="loadCapabilities()">Load Capabilities</button>
+
+<pre id="capabilitiesOutput">Not loaded</pre>
+</div>
+
+
+<!-- ===================== REGISTER TOOL ===================== -->
+
+<div class="section">
+<h2>Register Tool</h2>
+
+<input id="toolName" placeholder="Tool Name" />
+<input id="toolDescription" placeholder="Description" />
+<input id="toolConnector" placeholder="Connector Name (e.g., local)" />
+
+<textarea id="toolSchema">
+{
+  "type": "object",
+  "properties": {
+    "value": { "type": "number" }
+  },
+  "required": ["value"]
+}
+</textarea>
+
+<button onclick="registerTool()">Register Tool</button>
+
+<pre id="toolRegisterOutput">Not submitted</pre>
+</div>
+
+
+<!-- ===================== REGISTER CONNECTOR ===================== -->
+
+<div class="section">
+<h2>Register Connector</h2>
+
+<input id="connectorName" placeholder="Connector Name" />
+<input id="connectorType" placeholder="Type (ollama)" />
+<input id="connectorModel" placeholder="Model (optional)" />
+
+<button onclick="registerConnector()">Register Connector</button>
+
+<pre id="connectorRegisterOutput">Not submitted</pre>
+</div>
+
 
 <script>
+
+const BASE_URL = "http://localhost:8000";
+
+// ================= QUERY =================
 
 async function sendQuery() {
 
     const queryText = document.getElementById("queryInput").value;
+    const output = document.getElementById("queryResponse");
+    output.textContent = "Loading...";
 
-    const responseArea = document.getElementById("responseOutput");
-    responseArea.textContent = "Loading...";
+    try {
+        const response = await fetch(BASE_URL + "/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: queryText })
+        });
+
+        const data = await response.json();
+        output.textContent = JSON.stringify(data, null, 2);
+
+    } catch (err) {
+        output.textContent = "Error: " + err.message;
+    }
+}
+
+
+// ================= CAPABILITIES =================
+
+async function loadCapabilities() {
+
+    const output = document.getElementById("capabilitiesOutput");
+    output.textContent = "Loading...";
+
+    try {
+        const response = await fetch(BASE_URL + "/capabilities");
+        const data = await response.json();
+        output.textContent = JSON.stringify(data, null, 2);
+
+    } catch (err) {
+        output.textContent = "Error: " + err.message;
+    }
+}
+
+
+// ================= REGISTER TOOL =================
+
+async function registerTool() {
+
+    const output = document.getElementById("toolRegisterOutput");
 
     try {
 
-        const response = await fetch("http://localhost:8000/query", {
+        const schema = JSON.parse(document.getElementById("toolSchema").value);
+
+        const response = await fetch(BASE_URL + "/register-tool", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                query: queryText
+                name: document.getElementById("toolName").value,
+                description: document.getElementById("toolDescription").value,
+                input_schema: schema,
+                connector: document.getElementById("toolConnector").value
             })
         });
 
-        if (!response.ok) {
-            throw new Error("HTTP error " + response.status);
-        }
+        const data = await response.json();
+        output.textContent = JSON.stringify(data, null, 2);
+
+    } catch (err) {
+        output.textContent = "Error: " + err.message;
+    }
+}
+
+
+// ================= REGISTER CONNECTOR =================
+
+async function registerConnector() {
+
+    const output = document.getElementById("connectorRegisterOutput");
+
+    try {
+
+        const response = await fetch(BASE_URL + "/register-connector", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: document.getElementById("connectorName").value,
+                type: document.getElementById("connectorType").value,
+                model: document.getElementById("connectorModel").value
+            })
+        });
 
         const data = await response.json();
+        output.textContent = JSON.stringify(data, null, 2);
 
-        responseArea.textContent = JSON.stringify(data, null, 2);
-
-    } catch (error) {
-        responseArea.textContent = "Error: " + error.message;
+    } catch (err) {
+        output.textContent = "Error: " + err.message;
     }
 }
 
