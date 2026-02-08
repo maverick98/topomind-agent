@@ -4,6 +4,7 @@ import requests
 import logging
 import time
 from typing import List
+import re
 
 from ..interface import ReasoningEngine
 from ..plan_model import Plan, PlanStep
@@ -20,7 +21,7 @@ class OllamaPlanner(ReasoningEngine):
     It NEVER produces final answers.
     """
 
-    def __init__(self, model: str = "mistral"):
+    def __init__(self, model: str = "phi3:mini"):   # switched model
         self.model = model
         self.url = "http://localhost:11434/api/chat"
         self.prompt_builder = PlannerPromptBuilder()
@@ -35,58 +36,36 @@ class OllamaPlanner(ReasoningEngine):
             tools=tools,
         )
 
-        logger.debug("----- PLANNER PROMPT -----")
-        logger.debug(prompt)
-
-        # -------------------------------------------------------
-        # STRICT MODE TEMPERATURE CONTROL
-        # -------------------------------------------------------
-
         strict_mode_enabled = any(getattr(t, "strict", False) for t in tools)
 
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
+            "options": {
+                "num_predict": 256,   # planner does not need 512
+            }
         }
 
         if strict_mode_enabled:
             logger.info("[PLANNER] Strict tool detected. Forcing temperature=0.")
-            payload["temperature"] = 0
-
-        # -------------------------------------------------------
-        # DEBUG: Ollama Call Visibility
-        # -------------------------------------------------------
+            payload["options"]["temperature"] = 0
 
         logger.info("[PLANNER] Sending request to Ollama...")
-
-        # -------------------------------------------------------
-        # DEBUG: Print Payload Sent to Ollama
-        # -------------------------------------------------------
-
-        logger.info("[PLANNER DEBUG] Payload model: %s", payload.get("model"))
-        logger.info("[PLANNER DEBUG] Temperature: %s", payload.get("temperature", "default"))
-        logger.info("[PLANNER DEBUG] Stream: %s", payload.get("stream"))
-
-        messages = payload.get("messages", [])
-        if messages:
-            content_preview = messages[0].get("content", "")
-            logger.info("[PLANNER DEBUG] Prompt length (chars): %d", len(content_preview))
-            logger.info("[PLANNER DEBUG] Prompt preview (first 500 chars):\n%s",
-                        content_preview[:500])
-        else:
-            logger.warning("[PLANNER DEBUG] No messages found in payload.")
-
-        # -------------------------------------------------------
+        logger.info("[PLANNER DEBUG] Model: %s", payload["model"])
+        logger.info(
+            "[PLANNER DEBUG] Temperature: %s",
+            payload.get("options", {}).get("temperature", "default")
+        )
 
         start_time = time.time()
-
 
         try:
             response = requests.post(
                 self.url,
                 json=payload,
                 proxies={"http": None, "https": None},
+                timeout=180   # realistic for CPU
             )
         except Exception as e:
             logger.error(f"[PLANNER] Exception while contacting Ollama: {e}")
@@ -95,34 +74,36 @@ class OllamaPlanner(ReasoningEngine):
         elapsed = time.time() - start_time
         logger.info(f"[PLANNER] Ollama responded in {elapsed:.2f}s")
 
-        # -------------------------------------------------------
-
-        try:
-            response_json = response.json()
-        except Exception as e:
-            logger.error(f"[PLANNER] Failed to decode Ollama JSON response: {e}")
-            logger.error(f"[PLANNER] Raw response text: {response.text}")
-            raise
-
+        response_json = response.json()
         text = response_json.get("message", {}).get("content", "").strip()
 
-        logger.debug(f"[PLANNER] Raw LLM output:\n{text}")
-
         try:
-            result = json.loads(text)
+            #  non-greedy JSON extraction
+            cleaned = text.strip()
 
-            tool_name = result.get("tool", "echo")
-            args = result.get("args", {})
+            # Remove markdown fences if present
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```[a-zA-Z]*", "", cleaned)
+                cleaned = cleaned.rstrip("`").strip()
+
+            result = json.loads(cleaned)
+
+
+            tool_name = result.get("tool")
+            tool_name = result.get("tool")
+
+            tool_obj = next((t for t in tools if t.name == tool_name), None)
+
+            if tool_obj and tool_obj.input_schema:
+                # Always pass raw user input to first parameter
+                first_param = list(tool_obj.input_schema.keys())[0]
+                args = {first_param: user_input}
+            else:
+                args = result.get("args", {})
+
 
             logger.info(f"[PLANNER] Tool chosen: {tool_name}")
             logger.info(f"[PLANNER] Confidence: {result.get('confidence')}")
-            logger.info(f"[PLANNER] Reasoning: {result.get('reasoning')}")
-
-            if not args:
-                tool_obj = next((t for t in tools if t.name == tool_name), None)
-                if tool_obj and tool_obj.input_schema:
-                    first_param = list(tool_obj.input_schema.keys())[0]
-                    args = {first_param: user_input}
 
             step = PlanStep(
                 action=ToolCall(
@@ -138,16 +119,6 @@ class OllamaPlanner(ReasoningEngine):
 
         except Exception as e:
             logger.error(f"[PLANNER ERROR] JSON parsing failure: {e}")
-            logger.error(f"[PLANNER] Failed planner output: {text}")
+            logger.error(f"[PLANNER] Raw output: {text}")
 
-            step = PlanStep(
-                action=ToolCall(
-                    id=str(uuid.uuid4()),
-                    tool_name="echo",
-                    arguments={"text": "Planner failed"},
-                ),
-                reasoning="Fallback due to LLM parse failure.",
-                confidence=0.2,
-            )
-
-            return Plan(steps=[step], goal="Fallback")
+            return Plan(steps=[], goal="Planner failed")

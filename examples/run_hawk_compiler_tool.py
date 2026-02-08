@@ -195,6 +195,7 @@ connectors = ConnectorManager()
 # Planner LLM connector
 connectors.register("llm", OllamaConnector(model="mistral"))
 
+
 # Hawk print connector (execution phase)
 connectors.register("hawk_print", HawkPrintConnector())
 
@@ -214,7 +215,9 @@ registry.register(
 
 executor = ToolExecutor(connectors=connectors, registry=registry)
 
-planner = OllamaPlanner(model="mistral")
+#planner = OllamaPlanner(model="mistral")
+planner = OllamaPlanner(model="phi3:mini")
+
 
 agent = Agent(planner=planner, executor=executor)
 
@@ -225,9 +228,7 @@ agent = Agent(planner=planner, executor=executor)
 print("\n=== Hawk DSL Generation Tests ===\n")
 
 queries = [
-    "Calculate 25 * 48 + 10",
-    "Compute the square of 7",
-    "Loop from 1 to 5 and sum numbers",
+       "Calculate sum of 1 to 5",
 ]
 
 for q in queries:
