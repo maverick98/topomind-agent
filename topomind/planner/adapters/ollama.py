@@ -2,6 +2,7 @@ import json
 import uuid
 import requests
 import logging
+import time
 from typing import List
 
 from ..interface import ReasoningEngine
@@ -38,7 +39,7 @@ class OllamaPlanner(ReasoningEngine):
         logger.debug(prompt)
 
         # -------------------------------------------------------
-        # STRICT MODE TEMPERATURE CONTROL (surgical fix)
+        # STRICT MODE TEMPERATURE CONTROL
         # -------------------------------------------------------
 
         strict_mode_enabled = any(getattr(t, "strict", False) for t in tools)
@@ -54,16 +55,37 @@ class OllamaPlanner(ReasoningEngine):
             payload["temperature"] = 0
 
         # -------------------------------------------------------
+        # DEBUG: Ollama Call Visibility
+        # -------------------------------------------------------
 
-        response = requests.post(
-            self.url,
-            json=payload,
-            proxies={"http": None, "https": None},
-        )
+        logger.info("[PLANNER] Sending request to Ollama...")
+        start_time = time.time()
 
-        text = response.json().get("message", {}).get("content", "").strip()
+        try:
+            response = requests.post(
+                self.url,
+                json=payload,
+                proxies={"http": None, "https": None},
+            )
+        except Exception as e:
+            logger.error(f"[PLANNER] Exception while contacting Ollama: {e}")
+            raise
 
-        logger.debug(f"Planner raw LLM output: {text}")
+        elapsed = time.time() - start_time
+        logger.info(f"[PLANNER] Ollama responded in {elapsed:.2f}s")
+
+        # -------------------------------------------------------
+
+        try:
+            response_json = response.json()
+        except Exception as e:
+            logger.error(f"[PLANNER] Failed to decode Ollama JSON response: {e}")
+            logger.error(f"[PLANNER] Raw response text: {response.text}")
+            raise
+
+        text = response_json.get("message", {}).get("content", "").strip()
+
+        logger.debug(f"[PLANNER] Raw LLM output:\n{text}")
 
         try:
             result = json.loads(text)
@@ -94,8 +116,8 @@ class OllamaPlanner(ReasoningEngine):
             return Plan(steps=[step], goal="LLM-driven planning")
 
         except Exception as e:
-            logger.error(f"[PLANNER ERROR] {e}")
-            logger.error(f"Failed planner output: {text}")
+            logger.error(f"[PLANNER ERROR] JSON parsing failure: {e}")
+            logger.error(f"[PLANNER] Failed planner output: {text}")
 
             step = PlanStep(
                 action=ToolCall(
