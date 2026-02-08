@@ -17,48 +17,10 @@ class Tool:
     schema constitutes a contract change and must increment `version`.
     Historical versions are preserved for schema migration and replay.
 
-    Design Principles
-    -----------------
-    - Declarative: contains no execution logic
-    - Deterministic: immutable once created
-    - Versioned: enables schema evolution without breaking memory
-    - Policy-aware: carries runtime constraints (timeouts, retries)
-    - Observable: tagged for monitoring and reliability analysis
-
-    Attributes
-    ----------
-    name : str
-        Unique identifier of the tool. Used for planning and dispatch.
-
-    description : str
-        Human- and model-readable explanation of tool purpose.
-
-    connector_name : str
-        Name of the Connector responsible for execution.
-
-    input_schema : Dict[str, Any]
-        Structured definition of expected arguments.
-
-    output_schema : Dict[str, Any]
-        Structured definition of returned data.
-
-    version : str
-        Semantic version of the tool contract.
-
-    timeout_seconds : int
-        Maximum allowed execution time.
-
-    retryable : bool
-        Indicates whether transient failures may be retried.
-
-    max_retries : int
-        Maximum retry attempts if retryable.
-
-    side_effect : bool
-        Whether tool mutates external state.
-
-    tags : List[str]
-        Classification and observability tags.
+    Enhancements (Backward Compatible)
+    -----------------------------------
+    - prompt: Model-facing execution contract (optional)
+    - strict: Indicates whether planner must strictly obey tool prompt
     """
 
     # ------------------------------------------------------------------
@@ -75,6 +37,13 @@ class Tool:
 
     input_schema: Dict[str, Any]
     output_schema: Dict[str, Any]
+
+    # ------------------------------------------------------------------
+    # Model-Facing Execution Contract (NEW — Optional)
+    # ------------------------------------------------------------------
+
+    prompt: str = ""
+    strict: bool = False
 
     # ------------------------------------------------------------------
     # Schema Evolution
@@ -98,6 +67,39 @@ class Tool:
     tags: List[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------
+    # Validation Layer (Safe, Non-Breaking)
+    # ------------------------------------------------------------------
+
+    def __post_init__(self):
+        """
+        Lightweight invariant checks.
+
+        Does NOT modify state (frozen dataclass).
+        Raises early if contract is malformed.
+        """
+
+        if not self.name or not isinstance(self.name, str):
+            raise ValueError("Tool name must be a non-empty string.")
+
+        if not self.connector_name or not isinstance(self.connector_name, str):
+            raise ValueError("Connector name must be a non-empty string.")
+
+        if not isinstance(self.input_schema, dict):
+            raise TypeError("input_schema must be a dictionary.")
+
+        if not isinstance(self.output_schema, dict):
+            raise TypeError("output_schema must be a dictionary.")
+
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive.")
+
+        if self.max_retries < 0:
+            raise ValueError("max_retries cannot be negative.")
+
+        if not isinstance(self.version, str):
+            raise TypeError("version must be a string.")
+
+    # ------------------------------------------------------------------
     # Derived Properties
     # ------------------------------------------------------------------
 
@@ -109,3 +111,10 @@ class Tool:
         Used by SchemaRegistry to track historical contract versions.
         """
         return f"{self.name}:{self.version}"
+
+    @property
+    def is_strict(self) -> bool:
+        """
+        Indicates whether this tool enforces strict planner adherence.
+        """
+        return self.strict

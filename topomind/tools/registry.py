@@ -43,8 +43,11 @@ class ToolRegistry:
         """Register multiple tools atomically."""
         with self._lock:
             for tool in tools:
+                if not tool.name or not isinstance(tool.name, str):
+                    raise ValueError("Tool must have a valid string name.")
                 if tool.name in self._tools:
                     raise ValueError(f"Tool '{tool.name}' is already registered.")
+
             for tool in tools:
                 self._tools[tool.name] = tool
 
@@ -92,3 +95,50 @@ class ToolRegistry:
     def get_output_schema(self, tool_name: str) -> Dict[str, Any]:
         """Return declared output schema."""
         return self.get(tool_name).output_schema
+
+    # ------------------------------------------------------------------
+    # Planner Integration (NEW – Non-Breaking)
+    # ------------------------------------------------------------------
+
+    def get_planner_manifest(self) -> List[Dict[str, Any]]:
+        """
+        Returns tool definitions formatted for planner consumption.
+
+        Includes:
+        - name
+        - description
+        - input_schema
+        - prompt (if defined)
+        - strict flag
+        """
+        with self._lock:
+            manifest: List[Dict[str, Any]] = []
+
+            for tool in self._tools.values():
+                manifest.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                    "prompt": tool.prompt,
+                    "strict": tool.strict,
+                    "version": tool.version,
+                    "timeout_seconds": tool.timeout_seconds,
+                    "retryable": tool.retryable,
+                    "side_effect": tool.side_effect,
+                    "tags": list(tool.tags),
+                })
+
+            return manifest
+
+    def get_strict_tools(self) -> List[Tool]:
+        """
+        Returns tools marked as strict.
+        Useful for planner-level enforcement.
+        """
+        with self._lock:
+            return [t for t in self._tools.values() if t.strict]
+
+    def has_strict_tools(self) -> bool:
+        """Returns True if any registered tool is strict."""
+        with self._lock:
+            return any(t.strict for t in self._tools.values())
