@@ -24,12 +24,8 @@ from topomind.connectors.base import ExecutionConnector
 
 
 class HawkPrintConnector(ExecutionConnector):
-    """
-    Does NOT execute Hawk.
-    Only prints generated DSL.
-    """
 
-    def execute(self, tool, arguments):
+    def execute(self, tool, arguments, **kwargs):
         code = arguments.get("code", "")
 
         print("\n================ GENERATED HAWK CODE ================\n")
@@ -45,6 +41,7 @@ class HawkPrintConnector(ExecutionConnector):
             latency_ms=0,
             stability_signal=1.0,
         )
+
 
 
 # ============================================================

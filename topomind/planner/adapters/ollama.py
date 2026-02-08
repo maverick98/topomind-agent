@@ -78,29 +78,32 @@ class OllamaPlanner(ReasoningEngine):
         text = response_json.get("message", {}).get("content", "").strip()
 
         try:
-            #  non-greedy JSON extraction
             cleaned = text.strip()
 
-            # Remove markdown fences if present
+            # Remove markdown fences
             if cleaned.startswith("```"):
                 cleaned = re.sub(r"^```[a-zA-Z]*", "", cleaned)
                 cleaned = cleaned.rstrip("`").strip()
 
+            # Fix triple quotes
+            cleaned = cleaned.replace('"""', '"')
+
             result = json.loads(cleaned)
 
-
             tool_name = result.get("tool")
-            tool_name = result.get("tool")
+            args = result.get("args", {})
 
+            if not tool_name:
+                raise ValueError("No tool field in planner output")
+
+            # Validate tool exists
             tool_obj = next((t for t in tools if t.name == tool_name), None)
+            if not tool_obj:
+                raise ValueError(f"Unknown tool selected: {tool_name}")
 
-            if tool_obj and tool_obj.input_schema:
-                # Always pass raw user input to first parameter
-                first_param = list(tool_obj.input_schema.keys())[0]
-                args = {first_param: user_input}
-            else:
-                args = result.get("args", {})
-
+            # Ensure args is dict
+            if not isinstance(args, dict):
+                raise ValueError("Args must be a dictionary")
 
             logger.info(f"[PLANNER] Tool chosen: {tool_name}")
             logger.info(f"[PLANNER] Confidence: {result.get('confidence')}")
@@ -121,4 +124,15 @@ class OllamaPlanner(ReasoningEngine):
             logger.error(f"[PLANNER ERROR] JSON parsing failure: {e}")
             logger.error(f"[PLANNER] Raw output: {text}")
 
-            return Plan(steps=[], goal="Planner failed")
+            # Return controlled failure step instead of empty plan
+            step = PlanStep(
+                action=ToolCall(
+                    id=str(uuid.uuid4()),
+                    tool_name=tools[0].name,  # fallback to first valid tool
+                    arguments={},
+                ),
+                reasoning="Planner failed — fallback",
+                confidence=0.0,
+            )
+
+            return Plan(steps=[step], goal="Planner fallback")
