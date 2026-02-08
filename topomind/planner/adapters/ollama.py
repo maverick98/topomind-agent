@@ -37,11 +37,23 @@ class OllamaPlanner(ReasoningEngine):
         logger.debug("----- PLANNER PROMPT -----")
         logger.debug(prompt)
 
+        # -------------------------------------------------------
+        # STRICT MODE TEMPERATURE CONTROL (surgical fix)
+        # -------------------------------------------------------
+
+        strict_mode_enabled = any(getattr(t, "strict", False) for t in tools)
+
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         }
+
+        if strict_mode_enabled:
+            logger.info("[PLANNER] Strict tool detected. Forcing temperature=0.")
+            payload["temperature"] = 0
+
+        # -------------------------------------------------------
 
         response = requests.post(
             self.url,
