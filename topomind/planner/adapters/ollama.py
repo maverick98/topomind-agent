@@ -59,7 +59,28 @@ class OllamaPlanner(ReasoningEngine):
         # -------------------------------------------------------
 
         logger.info("[PLANNER] Sending request to Ollama...")
+
+        # -------------------------------------------------------
+        # DEBUG: Print Payload Sent to Ollama
+        # -------------------------------------------------------
+
+        logger.info("[PLANNER DEBUG] Payload model: %s", payload.get("model"))
+        logger.info("[PLANNER DEBUG] Temperature: %s", payload.get("temperature", "default"))
+        logger.info("[PLANNER DEBUG] Stream: %s", payload.get("stream"))
+
+        messages = payload.get("messages", [])
+        if messages:
+            content_preview = messages[0].get("content", "")
+            logger.info("[PLANNER DEBUG] Prompt length (chars): %d", len(content_preview))
+            logger.info("[PLANNER DEBUG] Prompt preview (first 500 chars):\n%s",
+                        content_preview[:500])
+        else:
+            logger.warning("[PLANNER DEBUG] No messages found in payload.")
+
+        # -------------------------------------------------------
+
         start_time = time.time()
+
 
         try:
             response = requests.post(
