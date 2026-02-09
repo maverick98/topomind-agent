@@ -3,21 +3,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
-from topomind import TopoMindApp
+from topomind.server.app_core import TopoMindApp
 from topomind.tools.registry import ToolRegistry
 from topomind.tools.schema import Tool
 from topomind.connectors.manager import ConnectorManager
 from topomind.connectors.base import FakeConnector
-from topomind.connectors.ollama import OllamaConnector
 from topomind.connectors.rest_connector import RestConnector
 
 import logging
 
 logging.basicConfig(level=logging.INFO)
 
+# ============================================================
+# PLANNER CONFIGURATION (SINGLE SOURCE OF TRUTH)
+# ============================================================
+
+PLANNER_TYPE = "ollama"
+PLANNER_MODEL = "mistral"   #  CHANGE MODEL HERE ONLY
 
 # ============================================================
-# Agent Manager (Fully Dynamic, No Hardcoding)
+# Agent Manager (Clean, Deterministic, Server-Owned Cognition)
 # ============================================================
 
 class AgentManager:
@@ -29,19 +34,32 @@ class AgentManager:
         self._build_agent()
 
     def _initialize_core(self):
-        # Base infrastructure connectors only
+        """
+        Register ONLY execution-layer connectors.
+
+        ❗ Planner talks to Ollama directly.
+        ❗ No LLM connector belongs here.
+        """
         self.connectors.register("local", FakeConnector())
-        self.connectors.register("llm", OllamaConnector(model="phi3:mini"))
 
     def _build_agent(self):
+        """
+        Build a fresh Agent instance.
+
+        Planner model is server-controlled and immutable
+        from client/tool registration.
+        """
         self.agent = TopoMindApp.create(
-            planner_type="ollama",
-            model="phi3:mini",
+            planner_type=PLANNER_TYPE,
+            model=PLANNER_MODEL,
             connectors=self.connectors,
             registry=self.registry,
         )
 
     def rebuild(self):
+        """
+        Rebuild agent when tools/connectors change.
+        """
         self._build_agent()
 
     def get_agent(self):
@@ -66,7 +84,6 @@ class AgentManager:
 
 manager = AgentManager()
 
-
 # ============================================================
 # FastAPI App
 # ============================================================
@@ -80,7 +97,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # ============================================================
 # Request / Response Models
@@ -109,23 +125,17 @@ class ToolRegistrationRequest(BaseModel):
 
 class ConnectorRegistrationRequest(BaseModel):
     name: str
-    type: str  # "ollama" | "fake" | "rest"
-    model: Optional[str] = None
+    type: str  # "fake" | "rest"
     base_url: Optional[str] = None
     method: Optional[str] = "POST"
     timeout_seconds: Optional[int] = 10
 
 
 # ============================================================
-# Connector Factory (Clean Pattern)
+# Connector Factory
 # ============================================================
 
 def create_connector(request: ConnectorRegistrationRequest):
-
-    if request.type == "ollama":
-        return OllamaConnector(
-            model=request.model or "phi3:mini"
-        )
 
     if request.type == "fake":
         return FakeConnector()
@@ -149,7 +159,11 @@ def create_connector(request: ConnectorRegistrationRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "planner_type": PLANNER_TYPE,
+        "planner_model": PLANNER_MODEL,
+    }
 
 
 # ============================================================
@@ -166,7 +180,7 @@ def capabilities():
 
 
 # ============================================================
-# Query
+# Query Endpoint
 # ============================================================
 
 @app.post("/query", response_model=QueryResponse)
@@ -186,13 +200,12 @@ def query_endpoint(request: QueryRequest):
 
 
 # ============================================================
-# Register Tool (Fully Dynamic)
+# Register Tool (Dynamic, Client-Owned)
 # ============================================================
 
 @app.post("/register-tool")
 def register_tool(request: ToolRegistrationRequest):
     try:
-
         tool = Tool(
             name=request.name,
             description=request.description,
@@ -215,13 +228,12 @@ def register_tool(request: ToolRegistrationRequest):
 
 
 # ============================================================
-# Register Connector (Dynamic)
+# Register Connector (Execution Layer Only)
 # ============================================================
 
 @app.post("/register-connector")
 def register_connector(request: ConnectorRegistrationRequest):
     try:
-
         connector = create_connector(request)
         manager.register_connector(request.name, connector)
 
