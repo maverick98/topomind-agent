@@ -1,7 +1,6 @@
 import requests
 from typing import Dict, Any, Optional
 from topomind.connectors.base import ExecutionConnector
-from topomind.models.tool_result import ToolResult
 
 
 class RestConnector(ExecutionConnector):
@@ -22,9 +21,15 @@ class RestConnector(ExecutionConnector):
         self.headers = headers or {}
         self.timeout_seconds = timeout_seconds
 
-    def execute(self, tool, arguments: Dict[str, Any], **kwargs) -> ToolResult:
+    def execute(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        timeout: int = None,
+    ) -> Dict[str, Any]:
 
-        url = f"{self.base_url}/{tool.name}"
+        url = f"{self.base_url}/{tool_name}"
+        effective_timeout = timeout or self.timeout_seconds
 
         try:
             if self.method == "POST":
@@ -32,38 +37,40 @@ class RestConnector(ExecutionConnector):
                     url,
                     json=arguments,
                     headers=self.headers,
-                    timeout=self.timeout_seconds,
+                    timeout=effective_timeout,
                 )
             elif self.method == "GET":
                 response = requests.get(
                     url,
                     params=arguments,
                     headers=self.headers,
-                    timeout=self.timeout_seconds,
+                    timeout=effective_timeout,
                 )
             else:
                 raise ValueError(f"Unsupported HTTP method: {self.method}")
 
             response.raise_for_status()
-            data = response.json()
 
-            return ToolResult(
-                tool_name=tool.name,
-                tool_version=tool.version,
-                status=data.get("status", "success"),
-                output=data.get("output"),
-                error=data.get("error"),
-                latency_ms=0,
-                stability_signal=1.0,
-            )
+            try:
+                data = response.json()
+            except ValueError:
+                raise RuntimeError(
+                    f"Remote service did not return valid JSON. "
+                    f"Response text: {response.text}"
+                )
+
+            if not isinstance(data, dict):
+                raise RuntimeError(
+                    f"Invalid response format from remote tool: {data}"
+                )
+
+            if "output" not in data:
+                raise RuntimeError(
+                    f"Missing 'output' field in remote response: {data}"
+                )
+
+            #  CRITICAL: Return only raw output for OutputValidator
+            return data["output"]
 
         except Exception as e:
-            return ToolResult(
-                tool_name=tool.name,
-                tool_version=tool.version,
-                status="failure",
-                output=None,
-                error=f"REST call failed: {str(e)}",
-                latency_ms=0,
-                stability_signal=0.0,
-            )
+            raise RuntimeError(f"REST call failed: {str(e)}")

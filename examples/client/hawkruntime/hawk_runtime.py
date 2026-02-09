@@ -230,9 +230,14 @@ def execute_hawk(request: HawkRequest):
     print("\n=====================================================\n")
 
     return {
+        "tool_name": "executeHawk",
+        "tool_version": "1.0",
         "status": "success",
         "output": {
             "code": code
         },
-        "error": None
+        "error": None,
+        "latency_ms": 0,
+        "stability_signal": 1.0
     }
+
