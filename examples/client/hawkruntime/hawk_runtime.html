@@ -1,43 +1,168 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hawk Runtime UI</title>
+    <title>Hawk DSL Runtime</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
     <style>
-        body { font-family: Consolas; margin: 40px; }
-        textarea { width: 100%; height: 100px; }
-        button { padding: 8px 15px; margin-top: 10px; }
-        pre { background: #f4f4f4; padding: 15px; }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2, #ff6ec4);
+            background-size: 300% 300%;
+            animation: gradientShift 10s ease infinite;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .card {
+            width: 900px;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+            color: #fff;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-weight: 700;
+            font-size: 28px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            border-radius: 12px;
+            border: none;
+            padding: 15px;
+            font-size: 15px;
+            margin-top: 10px;
+            outline: none;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.5);
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            background: linear-gradient(90deg, #ff6ec4, #7873f5);
+            color: white;
+            transition: 0.3s ease;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .thinking-bar {
+            height: 6px;
+            margin-top: 20px;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #ff6ec4, #7873f5, #42e695);
+            background-size: 300% 100%;
+            animation: thinking 1.5s linear infinite;
+            display: none;
+        }
+
+        @keyframes thinking {
+            0% { background-position: 0% 0; }
+            100% { background-position: 300% 0; }
+        }
+
+        pre {
+            margin-top: 25px;
+            background: white;
+            color: #333;
+            padding: 20px;
+            border-radius: 12px;
+            max-height: 300px;
+            overflow: auto;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        pre.show {
+            opacity: 1;
+        }
+
     </style>
 </head>
+
 <body>
 
-<h2>Hawk DSL Generator (Distributed)</h2>
+<div class="card">
 
-<textarea id="query">
-Calculate sum of 1 to 5
-</textarea>
+    <h1>🦅 Hawk DSL Generator</h1>
 
-<br>
-<button onclick="sendQuery()">Generate</button>
+    <textarea id="query">Calculate sum of 1 to 5</textarea>
 
-<pre id="output">Waiting...</pre>
+    <br>
+    <button onclick="sendQuery()">Generate</button>
+
+    <div class="thinking-bar" id="thinking"></div>
+
+    <pre id="output"></pre>
+
+</div>
 
 <script>
 
 async function sendQuery() {
 
     const query = document.getElementById("query").value;
+    const thinking = document.getElementById("thinking");
+    const output = document.getElementById("output");
 
-    const response = await fetch("http://127.0.0.1:8000/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query })
-    });
+    output.classList.remove("show");
+    output.textContent = "";
+    thinking.style.display = "block";
 
-    const data = await response.json();
+    try {
 
-    document.getElementById("output").textContent =
-        JSON.stringify(data, null, 2);
+        const response = await fetch("http://127.0.0.1:8000/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: query })
+        });
+
+        const data = await response.json();
+
+        thinking.style.display = "none";
+
+        if (data.status === "success" && data.output && data.output.code) {
+            output.textContent = data.output.code;
+        } else {
+            output.textContent = JSON.stringify(data, null, 2);
+        }
+
+        output.classList.add("show");
+
+    } catch (err) {
+        thinking.style.display = "none";
+        output.textContent = "Error: " + err;
+        output.classList.add("show");
+    }
 }
 
 </script>
