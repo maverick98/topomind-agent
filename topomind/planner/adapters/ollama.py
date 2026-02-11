@@ -75,7 +75,11 @@ You MUST return STRICT JSON with this structure:
 }
 
 Rules:
-- You may return one or multiple steps.
+- You MUST return EXACTLY ONE step.
+- Multi-step planning is NOT allowed.
+- The planner NEVER fabricates intermediate outputs.
+- The planner NEVER computes results.
+- The planner ONLY selects the highest-level tool needed.
 - Tools must be selected only from the available list.
 - Arguments must be valid JSON objects.
 - No markdown.

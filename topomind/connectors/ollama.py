@@ -46,7 +46,7 @@ class OllamaConnector(ExecutionConnector):
             response = requests.post(
                 self.url,
                 json=payload,
-                timeout=timeout,
+                timeout=300,
                 proxies={"http": None, "https": None},
             )
             response.raise_for_status()
