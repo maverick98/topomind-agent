@@ -4,7 +4,7 @@ class SemanticExtractor:
     Keeps format but avoids LLM call.
     """
 
-    def __init__(self, model="mistral"):
+    def __init__(self, model="mistral:latest"):
         self.model = model  # reserved for future use
 
     def extract(self, text: str):

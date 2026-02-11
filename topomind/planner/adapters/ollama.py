@@ -76,16 +76,19 @@ class OllamaPlanner(ReasoningEngine):
         logger.info(f"[PLANNER] Model: {self.model}")
 
         start_time = time.time()
-
+        print(f"[PLANNER] Sending payload {payload}")
         response = requests.post(
             self.url,
             json=payload,
-            proxies={"http": None, "https": None},
-            timeout=120
+            proxies={"http": None, "https": None}
         )
 
         elapsed = time.time() - start_time
         logger.info(f"[PLANNER] LLM latency: {elapsed:.2f}s")
+
+        logger.info(f"[OLLAMA STATUS] {response.status_code}")
+        logger.info(f"[OLLAMA RAW RESPONSE] {response.text}")
+
 
         response_json = response.json()
 

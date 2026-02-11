@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 # ============================================================
 
 PLANNER_TYPE = "ollama"
-PLANNER_MODEL = "mistral"   #  CHANGE MODEL HERE ONLY
+PLANNER_MODEL = "mistral:latest"   #  CHANGE MODEL HERE ONLY
 
 # ============================================================
 # Agent Manager (Clean, Deterministic, Server-Owned Cognition)

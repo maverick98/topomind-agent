@@ -5,7 +5,7 @@ from .base import ExecutionConnector
 
 class OllamaConnector(ExecutionConnector):
 
-    def __init__(self, model: str = "mistral"):
+    def __init__(self, model: str = "mistral:latest"):
         self.model = model
         self.url = "http://localhost:11434/api/chat"
 
