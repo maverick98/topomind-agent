@@ -10,12 +10,7 @@ from statsmodels.stats.diagnostic import acorr_ljungbox
 
 class StatisticsConnector(ExecutionConnector):
 
-    def execute(
-        self,
-        tool_name: str,
-        args: Dict[str, Any],
-        timeout: int,
-    ) -> Any:
+    def execute(self, tool, args: Dict[str, Any], timeout: int)-> Any:
 
         op = args["operation"].strip().upper()
 

@@ -3,35 +3,47 @@ from typing import Dict, Any
 from .base import ExecutionConnector
 
 
+DEFAULT_EXECUTION_MODEL = "mistral:latest"
+
+
 class OllamaConnector(ExecutionConnector):
 
-    def __init__(self, model: str = "mistral:latest"):
-        self.model = model
+    def __init__(self, default_model: str = DEFAULT_EXECUTION_MODEL):
+        self.default_model = default_model
         self.url = "http://localhost:11434/api/chat"
 
-    def execute(self, tool_name: str, args: Any, **kwargs) -> Dict[str, Any]:
+    def execute(self, tool, args: Any, timeout: int = 180, **kwargs) -> Dict[str, Any]:
         """
-        args may be:
-        - {"question": "..."}  (correct)
-        - "some text"          (LLM mistake)
-        - None
+        tool: Full Tool object
+        args: Validated arguments
         """
 
-        # Normalize input robustly
+        # -------------------------------
+        # Model Routing
+        # -------------------------------
+        model_to_use = tool.execution_model or self.default_model
+
+        print(f"[OllamaConnector] Using model: {model_to_use}")
+
+        # -------------------------------
+        # Build Execution Prompt
+        # -------------------------------
+
+        # tool.prompt = DSL contract
+        execution_contract = tool.prompt.strip() if tool.prompt else ""
+
         if isinstance(args, dict):
-            question = args.get("question")
+            user_input = str(args)
         elif isinstance(args, str):
-            question = args
+            user_input = args
         else:
-            question = None
+            user_input = ""
 
-        # Final fallback
-        if not question:
-            question = f"Explain: {tool_name}"
+        full_prompt = f"{execution_contract}\n\nUser Input:\n{user_input}"
 
         payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": question}],
+            "model": model_to_use,
+            "messages": [{"role": "user", "content": full_prompt}],
             "stream": False,
         }
 
@@ -39,15 +51,18 @@ class OllamaConnector(ExecutionConnector):
             response = requests.post(
                 self.url,
                 json=payload,
-                timeout=180,
+                timeout=timeout,
                 proxies={"http": None, "https": None},
             )
             response.raise_for_status()
 
             data = response.json()
-            answer = data.get("message", {}).get("content", "").strip()
+            content = data.get("message", {}).get("content", "").strip()
 
-            return {"answer": answer or "No response generated."}
+            if not content:
+                raise RuntimeError("Empty LLM response")
+
+            return content  # raw output for OutputValidator
 
         except Exception as e:
-            return {"answer": f"LLM reasoning failed: {str(e)}"}
+            raise RuntimeError(f"Ollama execution failed: {str(e)}")

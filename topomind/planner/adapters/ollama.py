@@ -3,8 +3,7 @@ import uuid
 import requests
 import logging
 import time
-from typing import List
-import re
+from typing import List, Optional
 
 from ..interface import ReasoningEngine
 from ..plan_model import Plan, PlanStep
@@ -13,6 +12,23 @@ from ...models.tool_call import ToolCall
 from ...tools.schema import Tool
 
 logger = logging.getLogger(__name__)
+
+
+def extract_first_json(text: str) -> Optional[str]:
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    stack = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            stack += 1
+        elif text[i] == "}":
+            stack -= 1
+            if stack == 0:
+                return text[start:i + 1]
+
+    return None
 
 
 class OllamaPlanner(ReasoningEngine):
@@ -24,16 +40,18 @@ class OllamaPlanner(ReasoningEngine):
 
     def generate_plan(self, user_input: str, signals, tools: List[Tool]) -> Plan:
 
+        print(f"model inside OllamaPlanner is {self.model}")
+
         tools = sorted(tools, key=lambda t: t.name)
 
-        # ==============================
-        # DEBUG 1 — TOOL MANIFEST
-        # ==============================
         logger.info("========== PLANNER DEBUG ==========")
         logger.info(f"[INPUT] {user_input}")
         logger.info(f"[SIGNALS] {signals}")
         logger.info(f"[AVAILABLE TOOLS] {[t.name for t in tools]}")
         logger.info("====================================")
+
+        # 🚫 REMOVED SINGLE TOOL FAST PATH
+        # ALWAYS USE LLM
 
         prompt = self.prompt_builder.build(
             user_input=user_input,
@@ -41,7 +59,6 @@ class OllamaPlanner(ReasoningEngine):
             tools=tools,
         )
 
-        # Hard constraint
         valid_tools = [t.name for t in tools]
 
         prompt += "\n\nYou MUST choose exactly one of:\n"
@@ -49,13 +66,12 @@ class OllamaPlanner(ReasoningEngine):
             prompt += f"- {t}\n"
         prompt += "\nReturn STRICT JSON.\n"
         prompt += "Double quotes only.\n"
-        prompt += "No single quotes.\n"
+        prompt += "No markdown.\n"
+        prompt += "No explanation outside JSON.\n"
 
-        # ==============================
-        # DEBUG 2 — PROMPT TRACE
-        # ==============================
+        logger.info(f"[PROMPT LENGTH] {len(prompt)} chars")
         logger.info("========== PROMPT SENT TO LLM ==========")
-        logger.info(prompt[:2000])  # prevent explosion
+        logger.info(prompt[:2000])
         logger.info("========================================")
 
         strict_mode_enabled = any(getattr(t, "strict", False) for t in tools)
@@ -65,7 +81,7 @@ class OllamaPlanner(ReasoningEngine):
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "options": {
-                "num_predict": 96,
+                "num_predict": 128,
             }
         }
 
@@ -76,7 +92,7 @@ class OllamaPlanner(ReasoningEngine):
         logger.info(f"[PLANNER] Model: {self.model}")
 
         start_time = time.time()
-        print(f"[PLANNER] Sending payload {payload}")
+
         response = requests.post(
             self.url,
             json=payload,
@@ -85,51 +101,33 @@ class OllamaPlanner(ReasoningEngine):
 
         elapsed = time.time() - start_time
         logger.info(f"[PLANNER] LLM latency: {elapsed:.2f}s")
-
         logger.info(f"[OLLAMA STATUS] {response.status_code}")
-        logger.info(f"[OLLAMA RAW RESPONSE] {response.text}")
 
+        if response.status_code != 200:
+            logger.error("[OLLAMA ERROR] Non-200 response")
+            return self._fallback_plan(tools, "Ollama HTTP failure")
 
         response_json = response.json()
-
-        # ==============================
-        # DEBUG 3 — RAW LLM OUTPUT
-        # ==============================
         raw_text = response_json.get("message", {}).get("content", "")
+
         logger.info("========== RAW LLM OUTPUT ==========")
         logger.info(raw_text)
         logger.info("====================================")
 
         try:
-            cleaned = raw_text.strip()
+            extracted_json = extract_first_json(raw_text)
 
-            if cleaned.startswith("```"):
-                cleaned = re.sub(r"^```[a-zA-Z]*", "", cleaned)
-                cleaned = cleaned.rstrip("`").strip()
+            if not extracted_json:
+                raise ValueError("No JSON object found in LLM output")
 
-            cleaned = cleaned.replace("'", '"')
-            cleaned = cleaned.replace('"""', '"')
+            logger.info("========== EXTRACTED JSON ==========")
+            logger.info(extracted_json)
+            logger.info("====================================")
 
-            # Extract first JSON block
-            json_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if json_match:
-                cleaned = json_match.group(0)
-
-            # ==============================
-            # DEBUG 4 — CLEANED JSON
-            # ==============================
-            logger.info("========== CLEANED JSON ==========")
-            logger.info(cleaned)
-            logger.info("==================================")
-
-            result = json.loads(cleaned)
+            result = json.loads(extracted_json)
 
             tool_name = result.get("tool")
             args = result.get("args", {})
-
-            logger.info(f"[PARSED TOOL] {tool_name}")
-            logger.info(f"[PARSED ARGS] {args}")
-            logger.info(f"[CONFIDENCE] {result.get('confidence')}")
 
             valid_tool_names = {t.name for t in tools}
             if tool_name not in valid_tool_names:
@@ -163,19 +161,22 @@ class OllamaPlanner(ReasoningEngine):
             logger.error(f"Error: {e}")
             logger.error("=====================================")
 
-            # fallback
-            fallback_tool = tools[0].name if tools else "none"
+            return self._fallback_plan(tools, str(e))
 
-            logger.warning(f"[FALLBACK] Using {fallback_tool}")
+    def _fallback_plan(self, tools: List[Tool], reason: str) -> Plan:
+        fallback_tool = tools[0].name if tools else "none"
 
-            step = PlanStep(
-                action=ToolCall(
-                    id=str(uuid.uuid4()),
-                    tool_name=fallback_tool,
-                    arguments={},
-                ),
-                reasoning="Planner failed — fallback",
-                confidence=0.0,
-            )
+        logger.warning(f"[FALLBACK] Using {fallback_tool}")
+        logger.warning(f"[REASON] {reason}")
 
-            return Plan(steps=[step], goal="Planner fallback")
+        step = PlanStep(
+            action=ToolCall(
+                id=str(uuid.uuid4()),
+                tool_name=fallback_tool,
+                arguments={},
+            ),
+            reasoning="Planner failed — deterministic fallback",
+            confidence=0.0,
+        )
+
+        return Plan(steps=[step], goal="Planner fallback")

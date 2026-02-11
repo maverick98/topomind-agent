@@ -45,6 +45,13 @@ class Tool:
     prompt: str = ""
     strict: bool = False
 
+
+    # ------------------------------------------------------------------
+    # Model Routing (NEW — Optional)
+    # ------------------------------------------------------------------
+
+    execution_model: str = ""  # empty = use system default
+
     # ------------------------------------------------------------------
     # Schema Evolution
     # ------------------------------------------------------------------
@@ -98,6 +105,10 @@ class Tool:
 
         if not isinstance(self.version, str):
             raise TypeError("version must be a string.")
+        
+        if self.execution_model and not isinstance(self.execution_model, str):
+            raise TypeError("execution_model must be a string.")
+
 
     # ------------------------------------------------------------------
     # Derived Properties

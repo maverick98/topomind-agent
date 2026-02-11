@@ -1,12 +1,18 @@
 import requests
+import logging
 from typing import Dict, Any, Optional
 from topomind.connectors.base import ExecutionConnector
+
+logger = logging.getLogger(__name__)
 
 
 class RestConnector(ExecutionConnector):
     """
     Generic REST execution connector.
-    Allows TopoMind to invoke external HTTP services.
+
+    Responsible ONLY for transport.
+    Does NOT perform validation.
+    Does NOT perform model routing.
     """
 
     def __init__(
@@ -21,15 +27,28 @@ class RestConnector(ExecutionConnector):
         self.headers = headers or {}
         self.timeout_seconds = timeout_seconds
 
+    # ============================================================
+    # EXECUTION
+    # ============================================================
+
     def execute(
         self,
-        tool_name: str,
+        tool,
         arguments: Dict[str, Any],
         timeout: int = None,
     ) -> Dict[str, Any]:
 
-        url = f"{self.base_url}/{tool_name}"
+        if not tool or not tool.name:
+            raise RuntimeError("Invalid tool object passed to RestConnector")
+
+        url = f"{self.base_url}/{tool.name}"
         effective_timeout = timeout or self.timeout_seconds
+
+        logger.info("========== REST CONNECTOR ==========")
+        logger.info(f"Tool: {tool.name}")
+        logger.info(f"URL: {url}")
+        logger.info(f"Payload: {arguments}")
+        logger.info("====================================")
 
         try:
             if self.method == "POST":
@@ -49,28 +68,34 @@ class RestConnector(ExecutionConnector):
             else:
                 raise ValueError(f"Unsupported HTTP method: {self.method}")
 
+            # Raise if HTTP error
             response.raise_for_status()
 
-            try:
-                data = response.json()
-            except ValueError:
-                raise RuntimeError(
-                    f"Remote service did not return valid JSON. "
-                    f"Response text: {response.text}"
-                )
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(
+                f"REST transport failure ({self.method} {url}): {e}"
+            )
 
-            if not isinstance(data, dict):
-                raise RuntimeError(
-                    f"Invalid response format from remote tool: {data}"
-                )
+        # ------------------------------------------------------------
+        # Response Parsing
+        # ------------------------------------------------------------
 
-            if "output" not in data:
-                raise RuntimeError(
-                    f"Missing 'output' field in remote response: {data}"
-                )
+        try:
+            data = response.json()
+        except ValueError:
+            raise RuntimeError(
+                f"Remote service did not return valid JSON. "
+                f"Response text: {response.text}"
+            )
 
-            #  CRITICAL: Return only raw output for OutputValidator
-            return data["output"]
+        if not isinstance(data, dict):
+            raise RuntimeError(
+                f"Invalid response format from remote tool: {data}"
+            )
 
-        except Exception as e:
-            raise RuntimeError(f"REST call failed: {str(e)}")
+        if "output" not in data:
+            raise RuntimeError(
+                f"Missing 'output' field in remote response: {data}"
+            )
+
+        return data["output"]

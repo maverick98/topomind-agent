@@ -11,12 +11,7 @@ class MathConnector(ExecutionConnector):
     def __init__(self):
         self._evaluator = SafeExpressionEvaluator()
 
-    def execute(
-        self,
-        tool_name: str,
-        args: Dict[str, Any],
-        timeout: int,
-    ) -> Any:
+    def execute(self, tool, args: Dict[str, Any], timeout: int)-> Any:
 
         expression = args["expression"]
 

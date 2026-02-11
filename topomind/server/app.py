@@ -19,10 +19,10 @@ logging.basicConfig(level=logging.INFO)
 # ============================================================
 
 PLANNER_TYPE = "ollama"
-PLANNER_MODEL = "mistral:latest"   #  CHANGE MODEL HERE ONLY
+PLANNER_MODEL = "phi3:mini"
 
 # ============================================================
-# Agent Manager (Clean, Deterministic, Server-Owned Cognition)
+# Agent Manager
 # ============================================================
 
 class AgentManager:
@@ -34,21 +34,9 @@ class AgentManager:
         self._build_agent()
 
     def _initialize_core(self):
-        """
-        Register ONLY execution-layer connectors.
-
-        ❗ Planner talks to Ollama directly.
-        ❗ No LLM connector belongs here.
-        """
         self.connectors.register("local", FakeConnector())
 
     def _build_agent(self):
-        """
-        Build a fresh Agent instance.
-
-        Planner model is server-controlled and immutable
-        from client/tool registration.
-        """
         self.agent = TopoMindApp.create(
             planner_type=PLANNER_TYPE,
             model=PLANNER_MODEL,
@@ -57,9 +45,6 @@ class AgentManager:
         )
 
     def rebuild(self):
-        """
-        Rebuild agent when tools/connectors change.
-        """
         self._build_agent()
 
     def get_agent(self):
@@ -88,7 +73,7 @@ manager = AgentManager()
 # FastAPI App
 # ============================================================
 
-app = FastAPI(title="TopoMind Dynamic Platform", version="5.0")
+app = FastAPI(title="TopoMind Dynamic Platform", version="5.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -121,11 +106,12 @@ class ToolRegistrationRequest(BaseModel):
     connector: str
     prompt: Optional[str] = None
     strict: Optional[bool] = False
+    execution_model: Optional[str] = ""   # ✅ NEW
 
 
 class ConnectorRegistrationRequest(BaseModel):
     name: str
-    type: str  # "fake" | "rest"
+    type: str
     base_url: Optional[str] = None
     method: Optional[str] = "POST"
     timeout_seconds: Optional[int] = 10
@@ -167,15 +153,24 @@ def health():
 
 
 # ============================================================
-# Capabilities
+# Capabilities (Enhanced)
 # ============================================================
 
 @app.get("/capabilities")
 def capabilities():
-    tools = manager.registry.list_tool_names()
+    tools = manager.registry.get_all()
+
     return {
         "tool_count": len(tools),
-        "tools": tools,
+        "tools": [
+            {
+                "name": t.name,
+                "connector": t.connector_name,
+                "strict": t.strict,
+                "execution_model": t.execution_model,
+            }
+            for t in tools
+        ]
     }
 
 
@@ -200,12 +195,16 @@ def query_endpoint(request: QueryRequest):
 
 
 # ============================================================
-# Register Tool (Dynamic, Client-Owned)
+# Register Tool (Now Logs Everything)
 # ============================================================
 
 @app.post("/register-tool")
 def register_tool(request: ToolRegistrationRequest):
     try:
+        logging.info("========== TOOL REGISTRATION RECEIVED ==========")
+        logging.info(request.json())
+        logging.info("================================================")
+
         tool = Tool(
             name=request.name,
             description=request.description,
@@ -214,7 +213,15 @@ def register_tool(request: ToolRegistrationRequest):
             connector_name=request.connector,
             prompt=request.prompt,
             strict=request.strict,
+            execution_model=request.execution_model or "",
         )
+
+        logging.info("========== TOOL OBJECT CREATED ==========")
+        logging.info(f"name: {tool.name}")
+        logging.info(f"connector: {tool.connector_name}")
+        logging.info(f"strict: {tool.strict}")
+        logging.info(f"execution_model: {tool.execution_model}")
+        logging.info("==========================================")
 
         manager.register_tool(tool)
 
@@ -228,7 +235,7 @@ def register_tool(request: ToolRegistrationRequest):
 
 
 # ============================================================
-# Register Connector (Execution Layer Only)
+# Register Connector
 # ============================================================
 
 @app.post("/register-connector")
@@ -236,6 +243,8 @@ def register_connector(request: ConnectorRegistrationRequest):
     try:
         connector = create_connector(request)
         manager.register_connector(request.name, connector)
+
+        logging.info(f"Connector registered: {request.name}")
 
         return {
             "status": "registered",

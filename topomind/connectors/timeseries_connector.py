@@ -9,12 +9,7 @@ class TimeSeriesConnector(ExecutionConnector):
     Connector responsible for time-series transformations.
     """
 
-    def execute(
-        self,
-        tool_name: str,
-        args: Dict[str, Any],
-        timeout: int,
-    ) -> Any:
+    def execute(self, tool, args: Dict[str, Any], timeout: int)-> Any:
 
         operation = args["operation"]
         values = args["values"]
