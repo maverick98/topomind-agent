@@ -13,27 +13,22 @@ class OllamaConnector(ExecutionConnector):
         self.url = "http://localhost:11434/api/chat"
 
     def execute(self, tool, args: Any, timeout: int = 180, **kwargs) -> Dict[str, Any]:
-        """
-        tool: Full Tool object
-        args: Validated arguments
-        """
 
-        # -------------------------------
-        # Model Routing
-        # -------------------------------
         model_to_use = tool.execution_model or self.default_model
-
         print(f"[OllamaConnector] Using model: {model_to_use}")
 
-        # -------------------------------
-        # Build Execution Prompt
-        # -------------------------------
-
-        # tool.prompt = DSL contract
         execution_contract = tool.prompt.strip() if tool.prompt else ""
 
+        # -------------------------------
+        # Extract user input cleanly
+        # -------------------------------
         if isinstance(args, dict):
-            user_input = str(args)
+            user_input = (
+                args.get("query")
+                or args.get("input")
+                or args.get("code")
+                or next(iter(args.values()), "")
+            )
         elif isinstance(args, str):
             user_input = args
         else:
@@ -62,7 +57,17 @@ class OllamaConnector(ExecutionConnector):
             if not content:
                 raise RuntimeError("Empty LLM response")
 
-            return content  # raw output for OutputValidator
+            # -------------------------------
+            # Schema-aware wrapping
+            # -------------------------------
+            if tool.output_schema:
+                # If output schema has single key, wrap automatically
+                if len(tool.output_schema.keys()) == 1:
+                    key = next(iter(tool.output_schema.keys()))
+                    return {key: content}
+
+            # Default fallback (string output)
+            return content
 
         except Exception as e:
             raise RuntimeError(f"Ollama execution failed: {str(e)}")

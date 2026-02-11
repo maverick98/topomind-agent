@@ -50,7 +50,7 @@ class ToolExecutor:
                 tool_name,
                 tool.version,
                 f"Invalid arguments: {e}",
-                start
+                start,
             )
 
         max_attempts = tool.max_retries + 1 if tool.retryable else 1
@@ -63,7 +63,7 @@ class ToolExecutor:
             try:
 
                 # ============================================================
-                # PHASE 1 — LLM EXECUTION MODEL (if configured)
+                # CASE 1: Tool has execution_model (LLM involved)
                 # ============================================================
                 if tool.execution_model:
 
@@ -81,26 +81,48 @@ class ToolExecutor:
                         f"[EXECUTION MODEL] Using model: {tool.execution_model}"
                     )
 
-                    # LLM generates transformed payload (e.g., Hawk DSL)
                     generated_output = llm_connector.execute(
                         tool,
                         args,
                         timeout=timeout,
                     )
 
-                    if not isinstance(generated_output, str):
-                        raise RuntimeError(
-                            "LLM execution_model must return raw string output"
-                        )
+                    # --------------------------------------------------------
+                    # If the tool itself uses LLM connector,
+                    # then Phase 1 IS the final execution.
+                    # --------------------------------------------------------
+                    if tool.connector_name == "llm":
+                        raw_output = generated_output
 
-                    # Replace args for downstream deterministic connector
-                    args = {"code": generated_output}
+                    else:
+                        # ----------------------------------------------------
+                        # Hybrid mode: LLM → Deterministic connector
+                        # ----------------------------------------------------
+                        if isinstance(generated_output, dict):
+                            args = generated_output
+
+                        elif isinstance(generated_output, str):
+                            if tool.output_schema and len(tool.output_schema) == 1:
+                                key = next(iter(tool.output_schema))
+                                args = {key: generated_output}
+                            else:
+                                args = generated_output
+                        else:
+                            raise RuntimeError(
+                                "LLM execution_model must return string or dict"
+                            )
+
+                        raw_output = connector.execute(tool, args, timeout=timeout)
 
                 # ============================================================
-                # PHASE 2 — DETERMINISTIC CONNECTOR EXECUTION
+                # CASE 2: Pure deterministic tool
                 # ============================================================
-                raw_output = connector.execute(tool, args, timeout=timeout)
+                else:
+                    raw_output = connector.execute(tool, args, timeout=timeout)
 
+                # ------------------------------------------------------------
+                # Output Validation
+                # ------------------------------------------------------------
                 output = self._out_validator.validate(tool_name, raw_output)
 
                 stability = 1.0 - (attempt * 0.1)

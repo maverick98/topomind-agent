@@ -4,11 +4,9 @@ from ..tools.schema import Tool
 
 class PlannerPromptBuilder:
     """
-    Responsible for constructing the planner prompt.
-
-    IMPORTANT:
-    Planner is ONLY responsible for tool selection.
-    It must NOT include execution-layer contracts (e.g. DSL rules).
+    Constructs planner prompt.
+    Planner is generic.
+    No domain logic allowed.
     """
 
     def build(
@@ -18,7 +16,6 @@ class PlannerPromptBuilder:
         tools: List[Tool],
     ) -> str:
 
-        # Deterministic ordering
         tools = sorted(tools, key=lambda t: t.name)
 
         tool_blocks = []
@@ -36,30 +33,35 @@ class PlannerPromptBuilder:
 
         tool_desc = "\n\n".join(tool_blocks)
 
-        constraint_block = """
-CRITICAL CONSTRAINTS:
-
-1. You MUST choose EXACTLY one tool from the list below.
-2. You MUST NOT invent new tool names.
-3. You MUST NOT rename tools.
-4. You MUST return STRICT JSON.
-5. If you output a tool name not in the list, the system will fail.
-"""
-
         return f"""
 You are the planning engine of an AI agent.
 
-Your job is to select the SINGLE most appropriate tool
-to handle the user request.
+Your job is to compose one or more tool calls
+to satisfy the user request.
 
 You DO NOT generate answers.
-You DO NOT produce natural language responses.
-You ONLY choose one tool and provide arguments.
+You DO NOT execute tools.
+You ONLY select tools and provide arguments.
 
-Return STRICT JSON:
-{{ "tool": "...", "args": {{...}}, "reasoning": "...", "confidence": 0.0-1.0 }}
+Return STRICT JSON in this format:
 
-{constraint_block}
+{{
+  "steps": [
+    {{
+      "tool": "tool_name",
+      "args": {{ }}
+    }}
+  ],
+  "confidence": 0.0-1.0
+}}
+
+Rules:
+- You may return one or multiple steps.
+- Tools must be selected ONLY from the available list.
+- Do NOT invent tool names.
+- Arguments must match the tool input schema.
+- No markdown.
+- No explanation outside JSON.
 
 User request:
 "{user_input}"

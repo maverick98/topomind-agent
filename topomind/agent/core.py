@@ -115,33 +115,29 @@ class Agent:
 
     def _execute_with_possible_replan(self, user_input, signals, tools, plan):
 
-        step = plan.first_step
+        previous_result = None
 
-        result = self._execute_step(step)
+        for step in plan:
 
-        if self._should_replan(step, result):
-            logger.info("[REPLAN] Low-confidence execution detected. Re-planning...")
+            logger.info(f"[EXECUTION] Running step: {step.action.tool_name}")
 
-            feedback_signals = {
-                "previous_tool": step.action.tool_name,
-                "previous_error": getattr(result, "error", None),
-                "previous_output": str(getattr(result, "output", ""))[:200],
-            }
+            # ----------------------------------------------------------
+            # Automatic chaining between steps
+            # ----------------------------------------------------------
+            if previous_result and isinstance(previous_result.output, dict):
+                if "code" in previous_result.output and "code" not in step.action.arguments:
+                    step.action.arguments["code"] = previous_result.output["code"]
 
-            t0 = time.time()
-            new_plan: Plan = self.planner.generate_plan(user_input, feedback_signals, tools)
-            logger.info(f"[REPLAN PLANNER] {time.time() - t0:.2f}s")
+            result = self._execute_step(step)
 
-            if not new_plan.is_empty():
-                new_step = new_plan.first_step
+            if getattr(result, "status", None) != "success":
+                logger.warning("[EXECUTION] Step failed. Stopping execution chain.")
+                return result
 
-                if new_step.action.tool_name != step.action.tool_name:
-                    logger.info(f"[REPLAN EXECUTOR] Trying alternative tool: {new_step.action.tool_name}")
-                    result = self._execute_step(new_step)
-                else:
-                    logger.info("[REPLAN] Planner chose same tool. Skipping retry.")
+            previous_result = result
 
-        return result
+        return previous_result
+
 
     def _execute_step(self, step):
 

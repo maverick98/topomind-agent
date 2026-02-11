@@ -9,6 +9,7 @@ from topomind.tools.schema import Tool
 from topomind.connectors.manager import ConnectorManager
 from topomind.connectors.base import FakeConnector
 from topomind.connectors.rest_connector import RestConnector
+from topomind.connectors.ollama import OllamaConnector  
 
 import logging
 
@@ -35,6 +36,12 @@ class AgentManager:
 
     def _initialize_core(self):
         self.connectors.register("local", FakeConnector())
+
+        # 🔥 REQUIRED for compileHawk (LLM tool)
+        self.connectors.register(
+            "llm",
+            OllamaConnector(default_model="mistral:latest")
+        )
 
     def _build_agent(self):
         self.agent = TopoMindApp.create(
@@ -106,7 +113,7 @@ class ToolRegistrationRequest(BaseModel):
     connector: str
     prompt: Optional[str] = None
     strict: Optional[bool] = False
-    execution_model: Optional[str] = ""   # ✅ NEW
+    execution_model: Optional[str] = ""
 
 
 class ConnectorRegistrationRequest(BaseModel):
@@ -153,7 +160,7 @@ def health():
 
 
 # ============================================================
-# Capabilities (Enhanced)
+# Capabilities
 # ============================================================
 
 @app.get("/capabilities")
@@ -195,7 +202,7 @@ def query_endpoint(request: QueryRequest):
 
 
 # ============================================================
-# Register Tool (Now Logs Everything)
+# Register Tool
 # ============================================================
 
 @app.post("/register-tool")
