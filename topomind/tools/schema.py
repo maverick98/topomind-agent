@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, Tuple
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,6 @@ class Tool:
     prompt: str = ""
     strict: bool = False
 
-
     # ------------------------------------------------------------------
     # Model Routing (NEW — Optional)
     # ------------------------------------------------------------------
@@ -71,7 +70,8 @@ class Tool:
     # Observability
     # ------------------------------------------------------------------
 
-    tags: List[str] = field(default_factory=list)
+    # NOTE: Tuple used instead of List to preserve immutability
+    tags: Tuple[str, ...] = field(default_factory=tuple)
 
     # ------------------------------------------------------------------
     # Validation Layer (Safe, Non-Breaking)
@@ -109,6 +109,14 @@ class Tool:
         if self.execution_model and not isinstance(self.execution_model, str):
             raise TypeError("execution_model must be a string.")
 
+        # ------------------------------------------------------------------
+        # Consistency Enforcement (Safe, Non-Breaking)
+        # ------------------------------------------------------------------
+
+        if not self.retryable and self.max_retries > 0:
+            raise ValueError(
+                "max_retries must be 0 when retryable is False."
+            )
 
     # ------------------------------------------------------------------
     # Derived Properties

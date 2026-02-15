@@ -9,18 +9,29 @@ from topomind.tools.schema import Tool
 from topomind.connectors.manager import ConnectorManager
 from topomind.connectors.base import FakeConnector
 from topomind.connectors.rest_connector import RestConnector
-from topomind.connectors.ollama import OllamaConnector  
+from topomind.connectors.ollama import OllamaConnector
+from topomind.connectors.groq import GroqConnector
 
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
 # ============================================================
 # PLANNER CONFIGURATION (SINGLE SOURCE OF TRUTH)
 # ============================================================
 
-PLANNER_TYPE = "ollama"
-PLANNER_MODEL = "phi3:mini"
+PLANNER_TYPE = "llm"
+LLM_BACKEND = "groq"  # "ollama" or "groq"
+
+if LLM_BACKEND == "ollama":
+    PLANNER_MODEL = "phi3:mini"
+elif LLM_BACKEND == "groq":
+    PLANNER_MODEL = "llama-3.1-8b-instant"
+else:
+    raise ValueError(f"Unsupported LLM_BACKEND: {LLM_BACKEND}")
 
 # ============================================================
 # Agent Manager
@@ -35,18 +46,26 @@ class AgentManager:
         self._build_agent()
 
     def _initialize_core(self):
+        # Local fallback connector
         self.connectors.register("local", FakeConnector())
 
-        # 🔥 REQUIRED for compileHawk (LLM tool)
-        self.connectors.register(
-            "llm",
-            OllamaConnector(default_model="mistral:latest")
-        )
+        # Register LLM connector
+        if LLM_BACKEND == "ollama":
+            self.connectors.register(
+                "llm",
+                OllamaConnector(default_model=PLANNER_MODEL)
+            )
+        elif LLM_BACKEND == "groq":
+            self.connectors.register(
+                "llm",
+                GroqConnector(model=PLANNER_MODEL)
+            )
 
     def _build_agent(self):
         self.agent = TopoMindApp.create(
             planner_type=PLANNER_TYPE,
             model=PLANNER_MODEL,
+            llm_backend=LLM_BACKEND,
             connectors=self.connectors,
             registry=self.registry,
         )
@@ -80,7 +99,7 @@ manager = AgentManager()
 # FastAPI App
 # ============================================================
 
-app = FastAPI(title="TopoMind Dynamic Platform", version="5.1")
+app = FastAPI(title="TopoMind Dynamic Platform", version="5.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -156,6 +175,7 @@ def health():
         "status": "ok",
         "planner_type": PLANNER_TYPE,
         "planner_model": PLANNER_MODEL,
+        "llm_backend": LLM_BACKEND,
     }
 
 
@@ -165,7 +185,7 @@ def health():
 
 @app.get("/capabilities")
 def capabilities():
-    tools = manager.registry.get_all()
+    tools = manager.registry.list_tools()
 
     return {
         "tool_count": len(tools),
@@ -175,6 +195,11 @@ def capabilities():
                 "connector": t.connector_name,
                 "strict": t.strict,
                 "execution_model": t.execution_model,
+                "version": t.version,
+                "timeout_seconds": t.timeout_seconds,
+                "retryable": t.retryable,
+                "side_effect": t.side_effect,
+                "tags": t.tags,
             }
             for t in tools
         ]
@@ -198,6 +223,7 @@ def query_endpoint(request: QueryRequest):
         )
 
     except Exception as e:
+        logging.exception("Query execution failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -208,27 +234,16 @@ def query_endpoint(request: QueryRequest):
 @app.post("/register-tool")
 def register_tool(request: ToolRegistrationRequest):
     try:
-        logging.info("========== TOOL REGISTRATION RECEIVED ==========")
-        logging.info(request.json())
-        logging.info("================================================")
-
         tool = Tool(
             name=request.name,
             description=request.description,
             input_schema=request.input_schema,
-            output_schema=request.output_schema,
+            output_schema=request.output_schema or {},
             connector_name=request.connector,
-            prompt=request.prompt,
-            strict=request.strict,
+            prompt=request.prompt or "",
+            strict=request.strict or False,
             execution_model=request.execution_model or "",
         )
-
-        logging.info("========== TOOL OBJECT CREATED ==========")
-        logging.info(f"name: {tool.name}")
-        logging.info(f"connector: {tool.connector_name}")
-        logging.info(f"strict: {tool.strict}")
-        logging.info(f"execution_model: {tool.execution_model}")
-        logging.info("==========================================")
 
         manager.register_tool(tool)
 
@@ -238,6 +253,7 @@ def register_tool(request: ToolRegistrationRequest):
         }
 
     except Exception as e:
+        logging.exception("Tool registration failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -251,14 +267,13 @@ def register_connector(request: ConnectorRegistrationRequest):
         connector = create_connector(request)
         manager.register_connector(request.name, connector)
 
-        logging.info(f"Connector registered: {request.name}")
-
         return {
             "status": "registered",
             "connector": request.name,
         }
 
     except Exception as e:
+        logging.exception("Connector registration failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

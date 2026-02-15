@@ -91,7 +91,9 @@ class ArgumentValidator:
         if isinstance(expected, type):
             return isinstance(value, expected)
 
-        return True
+        raise ArgumentValidationError(
+            f"Unsupported schema type specification: {expected}"
+        )
 
     def _string_type_match(self, expected: str, value: Any) -> bool:
 
@@ -104,14 +106,20 @@ class ArgumentValidator:
         mapping = {
             "string": str,
             "int": int,
-            "float": float,
+            "float": (float, int),  # allow int for float
             "bool": bool,
             "dict": dict,
             "list": list,
         }
 
         if expected in mapping:
-            return isinstance(value, mapping[expected])
+            expected_type = mapping[expected]
+
+            # Special case: prevent bool being accepted as int
+            if expected == "int":
+                return isinstance(value, int) and not isinstance(value, bool)
+
+            return isinstance(value, expected_type)
 
         # -------------------------
         # list[number]
@@ -120,11 +128,20 @@ class ArgumentValidator:
         if expected == "list[number]":
             if not isinstance(value, list):
                 return False
-            return all(isinstance(v, (int, float)) for v in value)
+            return all(
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                for v in value
+            )
 
         if expected == "list[string]":
             if not isinstance(value, list):
                 return False
             return all(isinstance(v, str) for v in value)
 
-        return True  # Unknown spec → allow
+        # -------------------------
+        # Unknown spec → FAIL HARD
+        # -------------------------
+
+        raise ArgumentValidationError(
+            f"Unknown type specification in schema: '{expected}'"
+        )

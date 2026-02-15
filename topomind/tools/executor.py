@@ -44,7 +44,7 @@ class ToolExecutor:
         # Argument Validation
         # ------------------------------------------------------------
         try:
-            args = self._arg_validator.validate(tool_name, args)
+            validated_args = self._arg_validator.validate(tool_name, args)
         except ArgumentValidationError as e:
             return self._failure_result(
                 tool_name,
@@ -60,10 +60,13 @@ class ToolExecutor:
         # Execution Loop
         # ------------------------------------------------------------
         for attempt in range(max_attempts):
+
+            working_args = dict(validated_args)  # never mutate original
+
             try:
 
                 # ============================================================
-                # CASE 1: Tool has execution_model (LLM involved)
+                # CASE 1: Tool has execution_model (LLM-assisted tool)
                 # ============================================================
                 if tool.execution_model:
 
@@ -81,51 +84,58 @@ class ToolExecutor:
                         f"[EXECUTION MODEL] Using model: {tool.execution_model}"
                     )
 
+                    # 🔥 Correct interface usage
                     generated_output = llm_connector.execute(
-                        tool,
-                        args,
+                        tool.name,
+                        working_args,
                         timeout=timeout,
                     )
 
-                    # --------------------------------------------------------
-                    # If the tool itself uses LLM connector,
-                    # then Phase 1 IS the final execution.
-                    # --------------------------------------------------------
+                    # If the tool itself is LLM-based
                     if tool.connector_name == "llm":
                         raw_output = generated_output
 
                     else:
-                        # ----------------------------------------------------
-                        # Hybrid mode: LLM → Deterministic connector
-                        # ----------------------------------------------------
+                        # Hybrid: LLM generates structured args → deterministic tool
                         if isinstance(generated_output, dict):
-                            args = generated_output
+                            working_args = generated_output
 
                         elif isinstance(generated_output, str):
                             if tool.output_schema and len(tool.output_schema) == 1:
                                 key = next(iter(tool.output_schema))
-                                args = {key: generated_output}
+                                working_args = {key: generated_output}
                             else:
-                                args = generated_output
+                                raise RuntimeError(
+                                    "LLM returned string but tool schema requires structured output"
+                                )
                         else:
                             raise RuntimeError(
                                 "LLM execution_model must return string or dict"
                             )
 
-                        raw_output = connector.execute(tool, args, timeout=timeout)
+                        raw_output = connector.execute(
+                            tool.name,
+                            working_args,
+                            timeout=timeout,
+                        )
 
                 # ============================================================
                 # CASE 2: Pure deterministic tool
                 # ============================================================
                 else:
-                    raw_output = connector.execute(tool, args, timeout=timeout)
+                    raw_output = connector.execute(
+                        tool.name,
+                        working_args,
+                        timeout=timeout,
+                    )
 
                 # ------------------------------------------------------------
                 # Output Validation
                 # ------------------------------------------------------------
                 output = self._out_validator.validate(tool_name, raw_output)
 
-                stability = 1.0 - (attempt * 0.1)
+                # Stability score degrades proportionally to retries
+                stability = 1.0 - (attempt / max_attempts)
 
                 return self._success_result(
                     tool_name,
@@ -149,6 +159,7 @@ class ToolExecutor:
             except Exception as e:
                 error = str(e)
 
+            # Retry handling
             if attempt >= max_attempts - 1:
                 return self._failure_result(
                     tool_name,
@@ -157,6 +168,7 @@ class ToolExecutor:
                     start,
                 )
 
+        # Should never reach here
         return self._failure_result(
             tool_name,
             tool.version,

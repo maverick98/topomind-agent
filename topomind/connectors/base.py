@@ -4,30 +4,20 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any
 
 
+# ============================================================
+# Abstract Execution Connector
+# ============================================================
+
 class ExecutionConnector(ABC):
     """
     Abstract execution backend representing the boundary between
     agent cognition and external deterministic systems.
-
-    A connector is responsible for performing real-world actions such as:
-        • Calling APIs
-        • Querying databases
-        • Running local compute
-        • Interacting with enterprise systems
-
-    Architectural Role
-    -------------------
-    ToolExecutor enforces *policy* (validation, retries, timeouts).
-    ExecutionConnector performs the *actual operation*.
-
-    Connectors must:
-        • Be deterministic given the same inputs
-        • Respect the provided timeout
-        • Raise TimeoutError on timeout
-        • Raise standard Exceptions for execution failures
-        • Never mutate the provided arguments
-        • Avoid leaking resources across calls
     """
+
+    @property
+    def name(self) -> str:
+        """Return connector identity (useful for telemetry/logging)."""
+        return self.__class__.__name__
 
     @abstractmethod
     def execute(
@@ -39,42 +29,25 @@ class ExecutionConnector(ABC):
         """
         Execute a tool call within the specified timeout.
 
-        Parameters
-        ----------
-        tool_name : str
-            Name of the tool being invoked.
-
-        args : Dict[str, Any]
-            Validated input arguments. MUST NOT be mutated.
-
-        timeout : int
-            Maximum allowed execution time in seconds.
-
-        Returns
-        -------
-        Any
-            Structured tool output matching the tool's declared output schema.
-
-        Raises
-        ------
-        TimeoutError
-            If execution exceeds the allowed time.
-
-        Exception
-            For deterministic execution failures (network errors,
-            database failures, etc.).
+        Implementations must:
+            • Be deterministic for identical inputs
+            • Respect timeout
+            • Raise TimeoutError on timeout
+            • Raise Exception on deterministic failure
+            • Never mutate input args
         """
+        if timeout <= 0:
+            raise ValueError("Timeout must be positive integer")
+
         raise NotImplementedError
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
     # Optional Lifecycle Hooks
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
 
     def health(self) -> bool:
         """
-        Return the connector's health status.
-
-        Used by stability systems to detect degraded or failing backends.
+        Return connector health status.
         Default implementation assumes healthy.
         """
         return True
@@ -82,18 +55,36 @@ class ExecutionConnector(ABC):
     def shutdown(self) -> None:
         """
         Gracefully release resources (connections, sessions, etc.).
-
-        Called during agent shutdown or connector replacement.
         """
         pass
 
 
+# ============================================================
+# Fake Connector (Testing)
+# ============================================================
+
 class FakeConnector(ExecutionConnector):
-    """Testing connector that respects tool output schema."""
+    """
+    Deterministic testing connector.
 
-    def execute(self, tool_name: str, args: Dict[str, Any], timeout: int) -> Any:
+    Respects tool output expectations.
+    """
+
+    def execute(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        timeout: int,
+    ) -> Any:
+
+        if timeout <= 0:
+            raise ValueError("Timeout must be positive integer")
+
+        # Defensive copy (never mutate caller input)
+        safe_args = dict(args)
+
         if tool_name == "echo":
-            # Must return dict to match output_schema
-            return {"text": args.get("text", "")}
+            return {"text": safe_args.get("text", "")}
 
-        return {"result": f"Tool {tool_name} executed with args {args}"}
+        # Simulate unknown tool failure
+        raise Exception(f"Unknown tool: {tool_name}")

@@ -1,5 +1,6 @@
 import logging
 import time
+
 from ..planner.interface import ReasoningEngine
 from ..planner.plan_model import Plan
 from ..tools.executor import ToolExecutor
@@ -42,12 +43,12 @@ class Agent:
         self._start_turn(user_input)
 
         signals = self._extract_stability()
-
         tools = self.registry.list_tools()
 
         plan = self._plan(user_input, signals, tools)
+
         if plan is None:
-            return {"error": "Planner produced no action"}
+            return self._failure_response("Planner produced no action")
 
         result = self._execute_with_possible_replan(
             user_input, signals, tools, plan
@@ -58,7 +59,7 @@ class Agent:
         logger.info(f"[TOTAL TURN] {time.time() - total_start:.2f}s")
         logger.debug(f"Execution result: {result}")
 
-        return result
+        return self._format_response(result)
 
     # ============================================================
     # TURN INITIALIZATION
@@ -73,6 +74,7 @@ class Agent:
             payload=user_input,
             metadata={},
         )
+
         self.memory_updater.update_from_observation(user_obs)
 
     # ============================================================
@@ -95,22 +97,22 @@ class Agent:
         plan: Plan = self.planner.generate_plan(user_input, signals, tools)
         logger.info(f"[PLANNER] {time.time() - t0:.2f}s")
 
-        self.state.record_plan(plan)
-
-        if plan.is_empty():
+        if not plan or plan.is_empty():
             logger.warning("[PLANNER] Empty plan produced")
             return None
 
         step = plan.first_step
-        if not step.action:
+        if not step or not step.action:
             logger.warning("[PLANNER] Invalid plan step")
             return None
 
+        self.state.record_plan(plan)
         self.state.last_tool_call = step.action
+
         return plan
 
     # ============================================================
-    # EXECUTION + REPLAN
+    # EXECUTION + SAFE CHAINING
     # ============================================================
 
     def _execute_with_possible_replan(self, user_input, signals, tools, plan):
@@ -122,41 +124,47 @@ class Agent:
             logger.info(f"[EXECUTION] Running step: {step.action.tool_name}")
 
             # ----------------------------------------------------------
-            # Automatic chaining between steps
+            # NEVER mutate planner output
             # ----------------------------------------------------------
-            if previous_result and isinstance(previous_result.output, dict):
-                if "code" in previous_result.output and "code" not in step.action.arguments:
-                    step.action.arguments["code"] = previous_result.output["code"]
+            working_args = dict(step.action.arguments)
 
-            result = self._execute_step(step)
+            if previous_result and isinstance(previous_result.output, dict):
+                if (
+                    "code" in previous_result.output
+                    and "code" not in working_args
+                ):
+                    working_args["code"] = previous_result.output["code"]
+
+            result = self._execute_step(step.action.tool_name, working_args)
 
             if getattr(result, "status", None) != "success":
-                logger.warning("[EXECUTION] Step failed. Stopping execution chain.")
+                logger.warning("[EXECUTION] Step failed. Stopping chain.")
                 return result
 
             previous_result = result
 
         return previous_result
 
+    # ============================================================
+    # SINGLE STEP EXECUTION
+    # ============================================================
 
-    def _execute_step(self, step):
+    def _execute_step(self, tool_name, args):
 
-        logger.info(f"[EXECUTOR] Calling tool: {step.action.tool_name}")
+        logger.info(f"[EXECUTOR] Calling tool: {tool_name}")
         t0 = time.time()
 
-        result = self.executor.execute(
-            step.action.tool_name,
-            step.action.arguments,
-        )
+        result = self.executor.execute(tool_name, args)
 
         logger.info(f"[EXECUTOR] {time.time() - t0:.2f}s")
 
-        self.state.record_execution(step.action, result)
+        self.state.record_execution(tool_name, result)
 
-        # Reliability tracking (unchanged behavior)
+        # Reliability tracking
         success = getattr(result, "status", None) == "success"
-        self.tool_reliability.record(step.action.tool_name, success)
+        self.tool_reliability.record(tool_name, success)
 
+        # Store tool result in memory
         tool_obs = Observation(
             source="tool",
             type="result",
@@ -167,22 +175,17 @@ class Agent:
 
         return result
 
-    def _should_replan(self, step, result):
-
-        return (
-            getattr(result, "status", None) != "success"
-            or getattr(result, "stability_signal", 1.0) < 0.5
-            or step.confidence < 0.3
-        )
-
     # ============================================================
     # SEMANTIC ENCODING
     # ============================================================
 
     def _handle_semantic_encoding(self, result):
 
+        if not result:
+            return
+
         if (
-            result.tool_name == "reason"
+            getattr(result, "tool_name", None) == "reason"
             and getattr(result, "status", None) == "success"
             and isinstance(getattr(result, "output", None), dict)
             and "answer" in result.output
@@ -197,3 +200,27 @@ class Agent:
 
             for obs in semantic_observations:
                 self.memory_updater.update_from_observation(obs)
+
+    # ============================================================
+    # RESPONSE FORMATTERS
+    # ============================================================
+
+    def _format_response(self, result):
+
+        if not result:
+            return self._failure_response("No result produced")
+
+        return {
+            "status": getattr(result, "status", None),
+            "tool": getattr(result, "tool_name", None),
+            "output": getattr(result, "output", None),
+            "error": getattr(result, "error", None),
+        }
+
+    def _failure_response(self, message: str):
+        return {
+            "status": "failure",
+            "tool": None,
+            "output": None,
+            "error": message,
+        }

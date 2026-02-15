@@ -10,8 +10,8 @@ class RuleBasedPlanner(ReasoningEngine):
     """
     Deterministic baseline planner.
 
-    Used when no LLM planner is configured. Provides predictable,
-    testable behavior and serves as a safe fallback.
+    Used when no LLM planner is configured.
+    Provides predictable, testable behavior and serves as a safe fallback.
     """
 
     def generate_plan(
@@ -20,9 +20,10 @@ class RuleBasedPlanner(ReasoningEngine):
         signals,
         tools: List[Tool],
     ) -> Plan:
+
+        signals = signals or {}
         available_tools = {t.name for t in tools}
 
-        # Fallback if echo tool not available
         if "echo" not in available_tools:
             return Plan(
                 steps=[],
@@ -30,40 +31,55 @@ class RuleBasedPlanner(ReasoningEngine):
                 meta={"reason": "echo tool missing"},
             )
 
-        stable = signals.get("stable_entities", [])
+        stable_entities = signals.get("stable_entities", [])
 
-        # Case 1: Reference persistent memory
-        if stable:
+        # -------------------------------------------------
+        # Case 1: Stable memory reference
+        # -------------------------------------------------
+        if stable_entities:
             step = PlanStep(
                 action=ToolCall(
                     tool_name="echo",
-                    args={"text": f"Still talking about: {stable[0]}"},
+                    arguments={"text": f"Still talking about: {stable_entities[0]}"},
                 ),
                 reasoning="Referenced stable entity from memory signals.",
                 confidence=0.9,
             )
-            return Plan(steps=[step], goal="Continue topic")
+            return Plan(
+                steps=[step],
+                goal="Continue topic"
+            )
 
+        # -------------------------------------------------
         # Case 2: Greeting
+        # -------------------------------------------------
         if "hello" in user_input.lower():
             step = PlanStep(
                 action=ToolCall(
                     tool_name="echo",
-                    args={"text": "Hello from TopoMind Planner!"},
+                    arguments={"text": "Hello from TopoMind Planner!"},
                 ),
                 reasoning="Greeting intent detected.",
                 confidence=1.0,
             )
-            return Plan(steps=[step], goal="Respond to greeting")
+            return Plan(
+                steps=[step],
+                goal="Respond to greeting"
+            )
 
-        # Default behavior
+        # -------------------------------------------------
+        # Default fallback
+        # -------------------------------------------------
         step = PlanStep(
             action=ToolCall(
                 tool_name="echo",
-                args={"text": f"You said: {user_input}"},
+                arguments={"text": f"You said: {user_input}"},
             ),
             reasoning="Fallback echo behavior.",
             confidence=0.7,
         )
 
-        return Plan(steps=[step], goal="Echo user input")
+        return Plan(
+            steps=[step],
+            goal="Echo user input"
+        )

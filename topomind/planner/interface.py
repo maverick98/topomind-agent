@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from ..tools.schema import Tool
 from .plan_model import Plan
@@ -14,15 +14,28 @@ class ReasoningEngine(ABC):
 
     Implementations may be:
     - Rule-based (deterministic)
-    - LLM-based (Ollama/OpenAI/etc.)
+    - LLM-based (Ollama/Groq/etc.)
     - Hybrid planners
     """
+
+    @property
+    def name(self) -> str:
+        """
+        Return planner identity.
+
+        Useful for:
+        • logging
+        • telemetry
+        • memory traces
+        • debugging
+        """
+        return self.__class__.__name__
 
     @abstractmethod
     def generate_plan(
         self,
         user_input: str,
-        signals: Dict[str, Any],
+        signals: Optional[Dict[str, Any]],
         tools: List[Tool],
     ) -> Plan:
         """
@@ -33,9 +46,12 @@ class ReasoningEngine(ABC):
         user_input : str
             Raw user request.
 
-        signals : Dict[str, Any]
+        signals : Dict[str, Any] | None
             System-level signals and memory-derived context.
-            Example: stable_entities, constraints, system health.
+            Example:
+                - stable_entities
+                - constraints
+                - system health
 
         tools : List[Tool]
             Tools available for planning. Defines the action space.
@@ -46,4 +62,4 @@ class ReasoningEngine(ABC):
             Structured reasoning output describing which tool(s)
             to call and why.
         """
-        pass
+        raise NotImplementedError

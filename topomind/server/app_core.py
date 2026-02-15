@@ -12,6 +12,12 @@ class TopoMindApp:
     """
     Server-owned application assembler.
     SINGLE source of truth.
+
+    This class wires together:
+        Planner
+        Executor
+        Memory
+        Connectors
     """
 
     @staticmethod
@@ -19,6 +25,7 @@ class TopoMindApp:
         *,
         planner_type: str,
         model: Optional[str],
+        llm_backend: str,
         connectors: ConnectorManager,
         registry: ToolRegistry,
     ) -> Agent:
@@ -26,6 +33,7 @@ class TopoMindApp:
         config = AgentConfig(
             planner_type=planner_type,
             model=model,
+            llm_backend=llm_backend,
         )
 
         planner = create_planner(config)

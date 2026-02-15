@@ -76,20 +76,57 @@ class OutputValidator:
         if isinstance(expected, type):
             return isinstance(value, expected)
 
-        return True
+        raise OutputValidationError(
+            f"Unsupported schema type specification: {expected}"
+        )
 
     def _string_type_match(self, expected: str, value: Any) -> bool:
+
+        expected = expected.lower()
+
+        # -------------------------
+        # Simple types
+        # -------------------------
+
         mapping = {
             "string": str,
             "int": int,
-            "float": float,
+            "float": (float, int),  # allow int for float
             "bool": bool,
             "dict": dict,
             "list": list,
         }
 
-        expected_type = mapping.get(expected.lower())
-        if expected_type is None:
-            return True
+        if expected in mapping:
+            expected_type = mapping[expected]
 
-        return isinstance(value, expected_type)
+            # Prevent bool being accepted as int
+            if expected == "int":
+                return isinstance(value, int) and not isinstance(value, bool)
+
+            return isinstance(value, expected_type)
+
+        # -------------------------
+        # list[number]
+        # -------------------------
+
+        if expected == "list[number]":
+            if not isinstance(value, list):
+                return False
+            return all(
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                for v in value
+            )
+
+        if expected == "list[string]":
+            if not isinstance(value, list):
+                return False
+            return all(isinstance(v, str) for v in value)
+
+        # -------------------------
+        # Unknown spec → FAIL HARD
+        # -------------------------
+
+        raise OutputValidationError(
+            f"Unknown type specification in schema: '{expected}'"
+        )

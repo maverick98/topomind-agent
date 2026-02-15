@@ -28,6 +28,10 @@ class MemoryUpdater:
     MemoryUpdater manages *memory dynamics*.
     """
 
+    # Forgetting cycle frequency (turn-based)
+    PRUNE_INTERVAL = 5
+    PRUNE_THRESHOLD = -5
+
     def __init__(self, graph: MemoryGraph):
         self._graph = graph
 
@@ -62,7 +66,6 @@ class MemoryUpdater:
         Flow:
         Observation → Dedup → Node creation/reuse → Reinforcement → Forgetting cycle
         """
-        self._graph.new_turn()
 
         # Deduplicate knowledge
         existing = self._dedup.find_existing(obs.type, obs.payload)
@@ -71,6 +74,6 @@ class MemoryUpdater:
         # Reinforce importance
         self._scorer.register_occurrence(node_id)
 
-        # Periodic forgetting cycle (every 5 turns)
-        if self._graph.current_turn % 5 == 0:
-            self._forget.prune(threshold=-5)
+        # Periodic forgetting cycle
+        if self._graph.current_turn % self.PRUNE_INTERVAL == 0:
+            self._forget.prune(threshold=self.PRUNE_THRESHOLD)

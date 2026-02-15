@@ -1,34 +1,69 @@
 from .rule_planner import RuleBasedPlanner
 from .interface import ReasoningEngine
+from topomind.config import AgentConfig
+from .adapters.llm_planner import LLMPlanner
 
-
-def create_planner(config) -> ReasoningEngine:
+def create_planner(config: AgentConfig) -> ReasoningEngine:
     """
     Factory for constructing the system reasoning engine.
 
-    Planner selection is driven by configuration. Supported types:
+    Planner selection is driven by configuration.
 
-    - "rule"    → deterministic rule-based planner
-    - "ollama"  → LLM planner using local Ollama models
-    - "openai"  → LLM planner using OpenAI API
+    Supported planner types:
+    - "rule" → deterministic rule-based planner
+    - "llm"  → LLM-based planner (backend selectable)
 
-    Raises
-    ------
-    ValueError
-        If planner type is unknown.
+    LLM backends:
+    - "ollama"
+    - "groq"
     """
 
-    planner_type = getattr(config, "planner_type", "rule")
+    planner_type = config.planner_type
 
+    # ---------------------------------------------------------
+    # RULE-BASED PLANNER
+    # ---------------------------------------------------------
     if planner_type == "rule":
         return RuleBasedPlanner()
 
-    if planner_type == "ollama":
-        from .adapters.ollama import OllamaPlanner
-        return OllamaPlanner(model=config.model)
+    # ---------------------------------------------------------
+    # LLM-BASED PLANNER
+    # ---------------------------------------------------------
+    if planner_type == "llm":
 
-    if planner_type == "openai":
-        from .adapters.openai import OpenAIPlanner
-        return OpenAIPlanner(model=config.model)
+        if not config.model:
+            raise ValueError(
+                "LLM planner requires a model name in AgentConfig."
+            )
 
-    raise ValueError(f"Unsupported planner type: {planner_type}")
+        if not config.llm_backend:
+            raise ValueError(
+                "LLM planner requires llm_backend in AgentConfig."
+            )
+
+        
+
+
+
+        # Lazy imports prevent unnecessary dependency loading
+        if config.llm_backend == "ollama":
+            from topomind.agent.llm import OllamaClient
+            client = OllamaClient(model=config.model)
+
+        elif config.llm_backend == "groq":
+            from topomind.agent.llm import GroqClient
+            client = GroqClient(model=config.model)
+
+        else:
+            raise ValueError(
+                f"Unsupported llm_backend: {config.llm_backend}"
+            )
+
+        return LLMPlanner(client)
+
+    # ---------------------------------------------------------
+    # UNKNOWN PLANNER TYPE
+    # ---------------------------------------------------------
+    raise ValueError(
+        f"Unsupported planner_type: {planner_type}"
+    )

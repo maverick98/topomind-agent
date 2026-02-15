@@ -4,6 +4,10 @@ from typing import List, Optional, Dict, Any, Iterator
 from ..models.tool_call import ToolCall
 
 
+# ============================================================
+# PlanStep
+# ============================================================
+
 @dataclass
 class PlanStep:
     """
@@ -32,9 +36,18 @@ class PlanStep:
     """
 
     def __post_init__(self):
-        # Safety normalization
-        self.confidence = max(0.0, min(1.0, float(self.confidence)))
+        # Normalize and clamp confidence safely
+        try:
+            self.confidence = float(self.confidence)
+        except Exception:
+            self.confidence = 0.0
 
+        self.confidence = max(0.0, min(1.0, self.confidence))
+
+
+# ============================================================
+# Plan
+# ============================================================
 
 @dataclass
 class Plan:
@@ -64,11 +77,13 @@ class Plan:
     • model name
     • token usage
     • planner type
+    • backend used
+    • retry count
     """
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
     # Convenience Accessors
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
 
     @property
     def first_step(self) -> PlanStep:
@@ -84,6 +99,30 @@ class Plan:
             raise ValueError("Cannot access first_step of empty plan.")
         return self.steps[0]
 
+    @property
+    def first_step_or_none(self) -> Optional[PlanStep]:
+        """Safely return first step or None if plan is empty."""
+        return self.steps[0] if self.steps else None
+
+    @property
+    def confidence(self) -> float:
+        """
+        Aggregate plan confidence.
+
+        Current logic:
+        - If empty → 0.0
+        - Single-step → that step's confidence
+        - Multi-step → minimum confidence (conservative)
+        """
+        if not self.steps:
+            return 0.0
+
+        return min(step.confidence for step in self.steps)
+
+    # ---------------------------------------------------------
+    # Utility Methods
+    # ---------------------------------------------------------
+
     def is_empty(self) -> bool:
         """Return True if planner produced no actions."""
         return len(self.steps) == 0
@@ -92,10 +131,34 @@ class Plan:
         """Return number of steps in the plan."""
         return len(self.steps)
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
     # Iteration Support (future multi-step execution)
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
 
     def __iter__(self) -> Iterator[PlanStep]:
         """Allow iteration over plan steps."""
         return iter(self.steps)
+
+    # ---------------------------------------------------------
+    # Debug / Observability Helpers
+    # ---------------------------------------------------------
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert plan to serializable dictionary.
+        Useful for logging, tracing, memory storage.
+        """
+        return {
+            "goal": self.goal,
+            "confidence": self.confidence,
+            "steps": [
+                {
+                    "tool": step.action.tool_name,
+                    "arguments": step.action.arguments,
+                    "reasoning": step.reasoning,
+                    "confidence": step.confidence,
+                }
+                for step in self.steps
+            ],
+            "meta": self.meta,
+        }

@@ -48,6 +48,11 @@ class MemoryGraph:
             ID of the created node.
         """
         node_id = str(uuid.uuid4())
+
+        # Defensive collision check (extremely unlikely but safe)
+        while node_id in self._nodes:
+            node_id = str(uuid.uuid4())
+
         self._nodes[node_id] = Node(node_id, type_, value, self._turn)
         return node_id
 
@@ -58,7 +63,8 @@ class MemoryGraph:
         return [n for n in self._nodes.values() if n.type == type_]
 
     def nodes(self) -> Iterable[Node]:
-        return self._nodes.values()
+        # Return defensive copy to prevent structural mutation
+        return list(self._nodes.values())
 
     # ------------------------------------------------------------------
     # Edge Operations
@@ -66,10 +72,18 @@ class MemoryGraph:
 
     def add_edge(self, source: str, target: str, relation: str) -> None:
         """Add a directed relationship between two nodes."""
+
+        if source not in self._nodes:
+            raise KeyError(f"Source node '{source}' does not exist.")
+
+        if target not in self._nodes:
+            raise KeyError(f"Target node '{target}' does not exist.")
+
         self._edges.append(Edge(source, target, relation))
 
     def edges(self) -> Iterable[Edge]:
-        return self._edges
+        # Return defensive copy to prevent structural mutation
+        return list(self._edges)
 
     # ------------------------------------------------------------------
     # Controlled Pruning (Structural Operation Only)
@@ -121,6 +135,8 @@ class MemoryGraph:
         This is the ONLY allowed mutation of internal structures
         from outside normal operations.
         """
+
+        # Defensive copy to prevent external mutation
         self._turn = turn
-        self._nodes = nodes
-        self._edges = edges
+        self._nodes = dict(nodes)
+        self._edges = list(edges)

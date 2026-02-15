@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Any, Iterable
 from threading import RLock
+from copy import deepcopy
 
 from .schema import Tool
 
@@ -71,14 +72,15 @@ class ToolRegistry:
     def list_tools(self) -> List[Tool]:
         """
         Return a copy of registered tools to prevent external mutation.
+        Deterministically sorted for planner stability.
         """
         with self._lock:
-            return list(self._tools.values())
+            return sorted(self._tools.values(), key=lambda t: t.name)
 
     def list_tool_names(self) -> List[str]:
         """Return all registered tool names."""
         with self._lock:
-            return list(self._tools.keys())
+            return sorted(self._tools.keys())
 
     def __len__(self) -> int:
         with self._lock:
@@ -89,12 +91,12 @@ class ToolRegistry:
     # ------------------------------------------------------------------
 
     def get_input_schema(self, tool_name: str) -> Dict[str, Any]:
-        """Return declared input schema."""
-        return self.get(tool_name).input_schema
+        """Return declared input schema (copy-safe)."""
+        return deepcopy(self.get(tool_name).input_schema)
 
     def get_output_schema(self, tool_name: str) -> Dict[str, Any]:
-        """Return declared output schema."""
-        return self.get(tool_name).output_schema
+        """Return declared output schema (copy-safe)."""
+        return deepcopy(self.get(tool_name).output_schema)
 
     # ------------------------------------------------------------------
     # Planner Integration (NEW – Non-Breaking)
@@ -114,11 +116,11 @@ class ToolRegistry:
         with self._lock:
             manifest: List[Dict[str, Any]] = []
 
-            for tool in self._tools.values():
+            for tool in sorted(self._tools.values(), key=lambda t: t.name):
                 manifest.append({
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.input_schema,
+                    "input_schema": deepcopy(tool.input_schema),
                     "prompt": tool.prompt,
                     "strict": tool.strict,
                     "version": tool.version,

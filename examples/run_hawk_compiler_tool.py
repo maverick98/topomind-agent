@@ -4,7 +4,7 @@ from topomind.tools.registry import ToolRegistry
 from topomind.tools.schema import Tool
 from topomind.tools.executor import ToolExecutor
 from topomind.agent.core import Agent
-from topomind.planner.adapters.ollama import OllamaPlanner
+from topomind.planner.adapters.llm_client import OllamaPlanner
 from topomind.models.tool_result import ToolResult
 from topomind.connectors.base import ExecutionConnector
 

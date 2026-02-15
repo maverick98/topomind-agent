@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, Dict
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,18 @@ class ToolResult:
     stability_signal: float
 
     # ------------------------------------------------------------------
+    # Post Init Normalization
+    # ------------------------------------------------------------------
+
+    def __post_init__(self):
+        # Clamp stability signal safely into range
+        object.__setattr__(
+            self,
+            "stability_signal",
+            max(0.0, min(1.0, float(self.stability_signal)))
+        )
+
+    # ------------------------------------------------------------------
     # Convenience Properties
     # ------------------------------------------------------------------
 
@@ -66,3 +78,25 @@ class ToolResult:
     @property
     def is_blocked(self) -> bool:
         return self.status == "blocked"
+
+    # ------------------------------------------------------------------
+    # Safe Serialization Boundary (NEW)
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert to JSON-safe dictionary.
+
+        This method should be used when returning results
+        outside the agent boundary (e.g., FastAPI layer).
+        """
+
+        return {
+            "tool_name": self.tool_name,
+            "tool_version": self.tool_version,
+            "status": self.status,
+            "output": self.output,
+            "error": self.error,
+            "latency_ms": self.latency_ms,
+            "stability_signal": self.stability_signal,
+        }
