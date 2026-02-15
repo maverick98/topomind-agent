@@ -85,3 +85,49 @@ class LLMPlanner(ReasoningEngine):
 
         except Exception as e:
             return self._fallback_plan(tools, str(e))
+        
+    def _fallback_plan(self, tools, error_message: str, user_input: str = "") -> Plan:
+        """
+        Fallback plan when LLM returns invalid JSON.
+        Default behavior: call compileHawk with user query.
+        """
+
+        logger.warning(f"[PLANNER FALLBACK] Triggered due to: {error_message}")
+
+        if not tools:
+            return Plan(
+                steps=[],
+                goal="Fallback planning",
+                meta={"error": error_message},
+            )
+
+        # Prefer compileHawk if available
+        compile_tool = next((t for t in tools if t.name == "compileHawk"), None)
+
+        if compile_tool:
+            tool_name = compile_tool.name
+            arguments = {"query": user_input}
+        else:
+            first_tool = sorted(tools, key=lambda t: t.name)[0]
+            tool_name = first_tool.name
+            arguments = {}
+
+        fallback_step = PlanStep(
+            action=ToolCall(
+                id=str(uuid.uuid4()),
+                tool_name=tool_name,
+                arguments=arguments,
+            ),
+            reasoning="Fallback planner decision",
+            confidence=0.0,
+        )
+
+        return Plan(
+            steps=[fallback_step],
+            goal="Fallback planning",
+            meta={
+                "planner": self.__class__.__name__,
+                "fallback": True,
+                "error": error_message,
+            },
+        )

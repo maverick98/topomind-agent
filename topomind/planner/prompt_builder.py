@@ -40,12 +40,12 @@ class PlannerPromptBuilder:
         return f"""
 You are the planning engine of an AI agent.
 
-Your job is to select EXACTLY ONE tool call
+Your job is to select the necessary tool calls
 to satisfy the user request.
 
 You DO NOT generate answers.
 You DO NOT execute tools.
-You ONLY select the correct tool and provide arguments.
+You ONLY select the correct tools and provide arguments.
 
 Return STRICT JSON in this format:
 
@@ -60,7 +60,9 @@ Return STRICT JSON in this format:
 }}
 
 Rules:
-- You MUST return EXACTLY ONE step.
+- You MAY return ONE OR MORE steps if required.
+- Steps MUST be ordered correctly.
+- Use multiple steps when a task requires sequential tool execution.
 - Tools must be selected ONLY from the available list.
 - Do NOT invent tool names.
 - Arguments MUST strictly match the input schema.
