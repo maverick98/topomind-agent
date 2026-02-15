@@ -1,60 +1,65 @@
 import os
-import json
 import requests
-from typing import Dict, Any
+from typing import Optional
 
 from .base import ExecutionConnector
 
 
 class GroqConnector(ExecutionConnector):
     """
-    Groq LLM execution connector.
+    Groq LLM connector.
 
-    Used when:
-    - tool.connector_name == "llm"
-    - tool.execution_model is set
+    Responsible ONLY for sending prompts to Groq and
+    returning raw text output.
+
+    Tool orchestration, schema validation, and prompt
+    construction are handled by ToolExecutor.
     """
 
-    def __init__(self, model: str = "llama-3.1-8b-instant"):
-        self.model = model
+    def __init__(
+        self,
+        model: str | None = None,
+        default_model: str = "llama-3.1-8b-instant",
+    ):
+        # Support legacy `model=` usage from app.py
+        self.default_model = model or default_model
+
         self.url = "https://api.groq.com/openai/v1/chat/completions"
 
         self.api_key = os.getenv("GROQ_API_KEY")
         if not self.api_key:
             raise ValueError("GROQ_API_KEY environment variable not set")
 
+
     # ------------------------------------------------------------
-    # Required by ExecutionConnector interface
+    # LLM execution
     # ------------------------------------------------------------
     def execute(
         self,
-        tool,
-        args: Dict[str, Any],
-        timeout: int,
-    ) -> Any:
+        prompt: str,
+        model: Optional[str] = None,
+        timeout: int = 30,
+    ) -> str:
+        """
+        Executes a prompt against Groq.
 
-        model_to_use = tool.execution_model or self.model
+        Parameters:
+            prompt: Fully rendered prompt string
+            model: Optional override model name
+            timeout: HTTP timeout in seconds
 
-        # Build final prompt
-        base_prompt = tool.prompt or ""
-        input_json = json.dumps(args, indent=2)
+        Returns:
+            Raw string response from LLM
+        """
 
-        final_prompt = f"""
-{base_prompt}
-
-Input:
-{input_json}
-
-Return STRICT JSON matching this schema:
-{json.dumps(tool.output_schema, indent=2)}
-
-No explanation.
-"""
+        model_to_use = model or self.default_model
 
         payload = {
             "model": model_to_use,
-            "messages": [{"role": "user", "content": final_prompt}],
-            "temperature": 0 if tool.strict else 0.7,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0,
         }
 
         response = requests.post(
@@ -69,20 +74,6 @@ No explanation.
 
         response.raise_for_status()
 
-        raw = response.json()["choices"][0]["message"]["content"]
+        data = response.json()
 
-        # Try extracting JSON safely
-        try:
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1:
-                return json.loads(raw[start:end + 1])
-        except Exception:
-            pass
-
-        # Fallback behavior
-        if len(tool.output_schema) == 1:
-            key = next(iter(tool.output_schema))
-            return {key: raw}
-
-        return {"result": raw}
+        return data["choices"][0]["message"]["content"]

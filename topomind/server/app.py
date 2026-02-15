@@ -215,16 +215,31 @@ def query_endpoint(request: QueryRequest):
     try:
         result = manager.get_agent().handle_query(request.query)
 
+        # --------------------------------------------------
+        # If agent returned dict (failure path / legacy)
+        # --------------------------------------------------
+        if isinstance(result, dict):
+            return QueryResponse(
+                status=result.get("status", "failure"),
+                tool=result.get("tool_name"),
+                output=result.get("output"),
+                error=result.get("error"),
+            )
+
+        # --------------------------------------------------
+        # Normal structured object
+        # --------------------------------------------------
         return QueryResponse(
-            status=result.status,
-            tool=result.tool_name,
-            output=result.output,
-            error=result.error,
+            status=getattr(result, "status", "failure"),
+            tool=getattr(result, "tool_name", None),
+            output=getattr(result, "output", None),
+            error=getattr(result, "error", None),
         )
 
     except Exception as e:
         logging.exception("Query execution failed")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # ============================================================

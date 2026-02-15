@@ -61,7 +61,7 @@ class ToolExecutor:
         # ------------------------------------------------------------
         for attempt in range(max_attempts):
 
-            working_args = dict(validated_args)  # never mutate original
+            working_args = dict(validated_args)
 
             try:
 
@@ -76,7 +76,7 @@ class ToolExecutor:
                         return self._failure_result(
                             tool_name,
                             tool.version,
-                            "No 'llm' connector registered for execution_model",
+                            "No 'llm' connector registered",
                             start,
                         )
 
@@ -84,30 +84,50 @@ class ToolExecutor:
                         f"[EXECUTION MODEL] Using model: {tool.execution_model}"
                     )
 
-                    # 🔥 Correct interface usage
+                    if not tool.prompt:
+                        raise RuntimeError(
+                            f"Tool '{tool.name}' has execution_model but no prompt defined"
+                        )
+
+                    # Render prompt using arguments
+                    try:
+                        prompt_text = tool.prompt
+
+                        for key, value in working_args.items():
+                            placeholder = "{" + key + "}"
+                            prompt_text = prompt_text.replace(placeholder, str(value))
+
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Failed to render prompt: {e}"
+                        )
+
+
+                    #  Correct LLM call
                     generated_output = llm_connector.execute(
-                        tool.name,
-                        working_args,
-                        timeout=timeout,
+                        prompt_text,
+                        model=tool.execution_model,
                     )
 
-                    # If the tool itself is LLM-based
+                    # If this tool itself is LLM-backed
                     if tool.connector_name == "llm":
-                        raw_output = generated_output
+
+                        if isinstance(generated_output, str):
+                            raw_output = {"code": generated_output}
+                        elif isinstance(generated_output, dict):
+                            raw_output = generated_output
+                        else:
+                            raise RuntimeError(
+                                "LLM returned unsupported type"
+                            )
 
                     else:
-                        # Hybrid: LLM generates structured args → deterministic tool
-                        if isinstance(generated_output, dict):
-                            working_args = generated_output
+                        # Hybrid mode (LLM → deterministic tool)
 
-                        elif isinstance(generated_output, str):
-                            if tool.output_schema and len(tool.output_schema) == 1:
-                                key = next(iter(tool.output_schema))
-                                working_args = {key: generated_output}
-                            else:
-                                raise RuntimeError(
-                                    "LLM returned string but tool schema requires structured output"
-                                )
+                        if isinstance(generated_output, str):
+                            working_args = {"code": generated_output}
+                        elif isinstance(generated_output, dict):
+                            working_args = generated_output
                         else:
                             raise RuntimeError(
                                 "LLM execution_model must return string or dict"
@@ -134,7 +154,6 @@ class ToolExecutor:
                 # ------------------------------------------------------------
                 output = self._out_validator.validate(tool_name, raw_output)
 
-                # Stability score degrades proportionally to retries
                 stability = 1.0 - (attempt / max_attempts)
 
                 return self._success_result(
@@ -159,7 +178,6 @@ class ToolExecutor:
             except Exception as e:
                 error = str(e)
 
-            # Retry handling
             if attempt >= max_attempts - 1:
                 return self._failure_result(
                     tool_name,
@@ -168,7 +186,6 @@ class ToolExecutor:
                     start,
                 )
 
-        # Should never reach here
         return self._failure_result(
             tool_name,
             tool.version,
@@ -233,9 +250,6 @@ class ToolExecutor:
     def _latency_ms(start_time: float) -> int:
         return int((time.monotonic() - start_time) * 1000)
 
-    # ------------------------------------------------------------
-    # Accessor
-    # ------------------------------------------------------------
     @property
     def registry(self) -> ToolRegistry:
         return self._registry
