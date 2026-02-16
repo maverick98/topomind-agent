@@ -26,9 +26,16 @@ class PlannerPromptBuilder:
             block = []
             block.append(f"- {t.name}")
             block.append(f"  Description: {t.description}")
-            block.append(
-                f"  Inputs (JSON schema): {json.dumps(t.input_schema, indent=2)}"
+
+            schema_str = json.dumps(
+                {
+                    k: f"<{v}>" if isinstance(v, str) else v
+                    for k, v in t.input_schema.items()
+                },
+                indent=2,
             )
+
+            block.append(f"  Inputs (JSON schema): {schema_str}")
 
             if getattr(t, "strict", False):
                 block.append("  STRICT: Tool requires valid argument structure.")
@@ -53,21 +60,26 @@ Return STRICT JSON in this format:
   "steps": [
     {{
       "tool": "tool_name",
-      "args": {{ }}
+      "args": {{}}
     }}
   ],
   "confidence": 0.0-1.0
 }}
 
 Rules:
-- You MAY return ONE OR MORE steps if required.
-- Steps MUST be ordered correctly.
-- Use multiple steps when a task requires sequential tool execution.
+- You MUST return valid JSON parsable by Python json.loads().
+- JSON MUST contain only the keys shown in the format above.
+- NO comments inside JSON.
+- NO trailing commas.
+- NO markdown.
+- NO explanations.
 - Tools must be selected ONLY from the available list.
 - Do NOT invent tool names.
 - Arguments MUST strictly match the input schema.
-- No markdown.
-- No explanation outside JSON.
+- ONLY include steps whose required arguments are fully known at planning time.
+- DO NOT create steps that depend on outputs of previous tools.
+- If a tool produces intermediate output needed by another tool,
+  include ONLY the first tool. The executor will handle chaining.
 
 User request:
 "{user_input}"
