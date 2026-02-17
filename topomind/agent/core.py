@@ -136,39 +136,66 @@ class Agent:
     def _execute_with_possible_replan(self, user_input, signals, tools, plan):
 
         previous_result = None
+        executed_tools = set()
 
         for step in plan:
 
             logger.info(f"[EXECUTION] Running step: {step.action.tool_name}")
-            logger.debug(f"[ORIGINAL STEP ARGS] {step.action.arguments}")
 
             working_args = dict(step.action.arguments)
-            logger.debug(f"[WORKING ARGS COPY] {working_args}")
-
-            if previous_result and isinstance(previous_result.output, dict):
-                if (
-                    "code" in previous_result.output
-                    and "code" not in working_args
-                ):
-                    working_args["code"] = previous_result.output["code"]
-                    logger.debug("[CHAINING] Injected code from previous result")
-
-            logger.debug(f"[FINAL ARGS SENT TO EXECUTOR] {working_args}")
 
             result = self._execute_step(step.action.tool_name, working_args)
 
-            logger.debug(f"[STEP RESULT OBJECT] {result}")
-            logger.debug(f"[STEP RESULT TYPE] {type(result)}")
-
             if getattr(result, "status", None) != "success":
                 logger.warning("[EXECUTION] Step failed. Stopping chain.")
-                logger.warning(f"[STEP FAILURE STATUS] {getattr(result, 'status', None)}")
-                logger.warning(f"[STEP FAILURE ERROR] {getattr(result, 'error', None)}")
                 return result
 
             previous_result = result
+            executed_tools.add(step.action.tool_name)
+
+            # ---------------------------------------------------------
+            # 🔄 Generic Artifact-Based Auto-Chaining
+            # ---------------------------------------------------------
+
+            if not isinstance(getattr(result, "output", None), dict):
+                continue
+
+            produced_artifacts = result.output
+
+            for artifact_type, artifact_value in produced_artifacts.items():
+
+                for tool in tools:
+
+                    # Skip if:
+                    # - Tool already executed
+                    # - Tool consumes nothing
+                    # - Tool is same as current step
+                    if (
+                        tool.name in executed_tools
+                        or artifact_type not in getattr(tool, "consumes", ())
+                    ):
+                        continue
+
+                    logger.info(
+                        f"[EXECUTOR] Auto-chaining {tool.name} "
+                        f"for artifact '{artifact_type}'."
+                    )
+
+                    chained_result = self._execute_step(
+                        tool.name,
+                        {artifact_type: artifact_value}
+                    )
+
+                    if getattr(chained_result, "status", None) != "success":
+                        logger.warning("[EXECUTION] Chained step failed.")
+                        return chained_result
+
+                    executed_tools.add(tool.name)
+                    previous_result = chained_result
 
         return previous_result
+
+
 
     # ============================================================
     # SINGLE STEP EXECUTION

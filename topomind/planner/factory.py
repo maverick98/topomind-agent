@@ -3,6 +3,7 @@ from .interface import ReasoningEngine
 from topomind.config import AgentConfig
 from .adapters.llm_planner import LLMPlanner
 
+
 def create_planner(config: AgentConfig) -> ReasoningEngine:
     """
     Factory for constructing the system reasoning engine.
@@ -16,6 +17,7 @@ def create_planner(config: AgentConfig) -> ReasoningEngine:
     LLM backends:
     - "ollama"
     - "groq"
+    - "cohere"
     """
 
     planner_type = config.planner_type
@@ -41,10 +43,6 @@ def create_planner(config: AgentConfig) -> ReasoningEngine:
                 "LLM planner requires llm_backend in AgentConfig."
             )
 
-        
-
-
-
         # Lazy imports prevent unnecessary dependency loading
         if config.llm_backend == "ollama":
             from topomind.agent.llm import OllamaClient
@@ -53,6 +51,10 @@ def create_planner(config: AgentConfig) -> ReasoningEngine:
         elif config.llm_backend == "groq":
             from topomind.agent.llm import GroqClient
             client = GroqClient(model=config.model)
+
+        elif config.llm_backend == "cohere":
+            from topomind.agent.llm import CohereClient
+            client = CohereClient(model=config.model)
 
         else:
             raise ValueError(

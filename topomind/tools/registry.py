@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Dict, List, Any, Iterable
 from threading import RLock
 from copy import deepcopy
+import logging
 
 from .schema import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -17,31 +20,34 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, Tool] = {}
-        self._lock = RLock()  # Future-proof for concurrent planners/executors
+        self._lock = RLock()
+        logger.info("[TOOL REGISTRY] Initialized (empty)")
 
     # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
 
     def register(self, tool: Tool) -> None:
-        """
-        Register a tool.
 
-        Raises
-        ------
-        ValueError
-            If tool name already exists or is invalid.
-        """
         if not tool.name or not isinstance(tool.name, str):
             raise ValueError("Tool must have a valid string name.")
 
         with self._lock:
             if tool.name in self._tools:
                 raise ValueError(f"Tool '{tool.name}' is already registered.")
+
             self._tools[tool.name] = tool
 
+            logger.info(
+                "[TOOL REGISTRY] Tool registered | total=%d",
+                len(self._tools)
+            )
+
+            # Full contract dump
+            logger.info(tool.to_debug_string())
+
     def register_many(self, tools: Iterable[Tool]) -> None:
-        """Register multiple tools atomically."""
+
         with self._lock:
             for tool in tools:
                 if not tool.name or not isinstance(tool.name, str):
@@ -51,68 +57,95 @@ class ToolRegistry:
 
             for tool in tools:
                 self._tools[tool.name] = tool
+                logger.info("[TOOL REGISTRY] Bulk registered: %s", tool.name)
+
+            logger.info(
+                "[TOOL REGISTRY] Bulk registration complete | total=%d",
+                len(self._tools)
+            )
 
     # ------------------------------------------------------------------
     # Lookup
     # ------------------------------------------------------------------
 
     def get(self, tool_name: str) -> Tool:
-        """Retrieve a tool by name."""
+
         with self._lock:
             try:
-                return self._tools[tool_name]
+                tool = self._tools[tool_name]
+                logger.debug(
+                    "[TOOL REGISTRY] Lookup success: %s | hash=%s",
+                    tool_name,
+                    tool.contract_hash
+                )
+                return tool
             except KeyError:
+                logger.error(
+                    "[TOOL REGISTRY] Lookup FAILED: %s | available=%s",
+                    tool_name,
+                    list(self._tools.keys())
+                )
                 raise KeyError(f"Tool '{tool_name}' is not registered.") from None
 
     def has_tool(self, tool_name: str) -> bool:
-        """Check whether a tool exists."""
         with self._lock:
-            return tool_name in self._tools
+            exists = tool_name in self._tools
+            logger.debug(
+                "[TOOL REGISTRY] has_tool(%s) -> %s",
+                tool_name,
+                exists
+            )
+            return exists
 
     def list_tools(self) -> List[Tool]:
-        """
-        Return a copy of registered tools to prevent external mutation.
-        Deterministically sorted for planner stability.
-        """
+
         with self._lock:
-            return sorted(self._tools.values(), key=lambda t: t.name)
+            tools = sorted(self._tools.values(), key=lambda t: t.name)
+
+            logger.info(
+                "[TOOL REGISTRY] list_tools | count=%d | names=%s",
+                len(tools),
+                [t.name for t in tools]
+            )
+
+            return tools
 
     def list_tool_names(self) -> List[str]:
-        """Return all registered tool names."""
+
         with self._lock:
-            return sorted(self._tools.keys())
+            names = sorted(self._tools.keys())
+
+            logger.info(
+                "[TOOL REGISTRY] list_tool_names -> %s",
+                names
+            )
+
+            return names
 
     def __len__(self) -> int:
         with self._lock:
-            return len(self._tools)
+            count = len(self._tools)
+            logger.debug("[TOOL REGISTRY] __len__ -> %d", count)
+            return count
 
     # ------------------------------------------------------------------
-    # Schema Access (Contract Authority)
+    # Schema Access
     # ------------------------------------------------------------------
 
     def get_input_schema(self, tool_name: str) -> Dict[str, Any]:
-        """Return declared input schema (copy-safe)."""
+        logger.debug("[TOOL REGISTRY] get_input_schema(%s)", tool_name)
         return deepcopy(self.get(tool_name).input_schema)
 
     def get_output_schema(self, tool_name: str) -> Dict[str, Any]:
-        """Return declared output schema (copy-safe)."""
+        logger.debug("[TOOL REGISTRY] get_output_schema(%s)", tool_name)
         return deepcopy(self.get(tool_name).output_schema)
 
     # ------------------------------------------------------------------
-    # Planner Integration (NEW – Non-Breaking)
+    # Planner Integration
     # ------------------------------------------------------------------
 
     def get_planner_manifest(self) -> List[Dict[str, Any]]:
-        """
-        Returns tool definitions formatted for planner consumption.
 
-        Includes:
-        - name
-        - description
-        - input_schema
-        - prompt (if defined)
-        - strict flag
-        """
         with self._lock:
             manifest: List[Dict[str, Any]] = []
 
@@ -124,23 +157,44 @@ class ToolRegistry:
                     "prompt": tool.prompt,
                     "strict": tool.strict,
                     "version": tool.version,
+                    "execution_model": tool.execution_model,
                     "timeout_seconds": tool.timeout_seconds,
                     "retryable": tool.retryable,
                     "side_effect": tool.side_effect,
                     "tags": list(tool.tags),
+                    "produces": list(tool.produces),
+                    "consumes": list(tool.consumes),
+                    "contract_hash": tool.contract_hash,
                 })
+
+            logger.info(
+                "[TOOL REGISTRY] Planner manifest generated | count=%d",
+                len(manifest)
+            )
 
             return manifest
 
     def get_strict_tools(self) -> List[Tool]:
-        """
-        Returns tools marked as strict.
-        Useful for planner-level enforcement.
-        """
+
         with self._lock:
-            return [t for t in self._tools.values() if t.strict]
+            strict_tools = [t for t in self._tools.values() if t.strict]
+
+            logger.info(
+                "[TOOL REGISTRY] Strict tools | count=%d | names=%s",
+                len(strict_tools),
+                [t.name for t in strict_tools]
+            )
+
+            return strict_tools
 
     def has_strict_tools(self) -> bool:
-        """Returns True if any registered tool is strict."""
+
         with self._lock:
-            return any(t.strict for t in self._tools.values())
+            result = any(t.strict for t in self._tools.values())
+
+            logger.info(
+                "[TOOL REGISTRY] has_strict_tools -> %s",
+                result
+            )
+
+            return result

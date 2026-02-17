@@ -8,7 +8,7 @@ class AgentConfig:
         self,
         planner_type: str = "rule",   # "rule" or "llm"
         model: str = None,
-        llm_backend: str = "ollama",  # "ollama" or "groq"
+        llm_backend: str = "ollama",  # "ollama", "groq", or "cohere"
     ):
         self.planner_type = planner_type
         self.model = model
@@ -20,7 +20,7 @@ class AgentConfig:
         if self.planner_type not in {"rule", "llm"}:
             raise ValueError(f"Unsupported planner_type: {self.planner_type}")
 
-        if self.llm_backend not in {"ollama", "groq"}:
+        if self.llm_backend not in {"ollama", "groq", "cohere"}:
             raise ValueError(f"Unsupported llm_backend: {self.llm_backend}")
 
         if self.planner_type == "llm" and not self.model:

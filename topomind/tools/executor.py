@@ -61,83 +61,42 @@ class ToolExecutor:
         # ------------------------------------------------------------
         for attempt in range(max_attempts):
 
-            working_args = dict(validated_args)
-
             try:
+                working_args = dict(validated_args)
 
                 # ============================================================
                 # CASE 1: Tool has execution_model (LLM-assisted tool)
                 # ============================================================
                 if tool.execution_model:
 
-                    try:
-                        llm_connector = self._connectors.get("llm")
-                    except KeyError:
-                        return self._failure_result(
-                            tool_name,
-                            tool.version,
-                            "No 'llm' connector registered",
-                            start,
-                        )
-
-                    logger.info(
-                        f"[EXECUTION MODEL] Using model: {tool.execution_model}"
-                    )
+                    llm_connector = self._connectors.get("llm")
 
                     if not tool.prompt:
                         raise RuntimeError(
                             f"Tool '{tool.name}' has execution_model but no prompt defined"
                         )
 
-                    # Render prompt using arguments
-                    try:
-                        prompt_text = tool.prompt
-
-                        for key, value in working_args.items():
-                            placeholder = "{" + key + "}"
-                            prompt_text = prompt_text.replace(placeholder, str(value))
-
-                    except Exception as e:
-                        raise RuntimeError(
-                            f"Failed to render prompt: {e}"
+                    # Render prompt
+                    prompt_text = tool.prompt
+                    for key, value in working_args.items():
+                        prompt_text = prompt_text.replace(
+                            "{" + key + "}",
+                            str(value)
                         )
 
+                    logger.info(
+                        f"[EXECUTION MODEL] Using model: {tool.execution_model}"
+                    )
 
-                    #  Correct LLM call
                     generated_output = llm_connector.execute(
                         prompt_text,
                         model=tool.execution_model,
                     )
 
-                    # If this tool itself is LLM-backed
-                    if tool.connector_name == "llm":
-
-                        if isinstance(generated_output, str):
-                            raw_output = {"code": generated_output}
-                        elif isinstance(generated_output, dict):
-                            raw_output = generated_output
-                        else:
-                            raise RuntimeError(
-                                "LLM returned unsupported type"
-                            )
-
-                    else:
-                        # Hybrid mode (LLM → deterministic tool)
-
-                        if isinstance(generated_output, str):
-                            working_args = {"code": generated_output}
-                        elif isinstance(generated_output, dict):
-                            working_args = generated_output
-                        else:
-                            raise RuntimeError(
-                                "LLM execution_model must return string or dict"
-                            )
-
-                        raw_output = connector.execute(
-                            tool.name,
-                            working_args,
-                            timeout=timeout,
-                        )
+                    raw_output = self._normalize_output(
+                        tool,
+                        generated_output
+                    )
 
                 # ============================================================
                 # CASE 2: Pure deterministic tool
@@ -150,7 +109,7 @@ class ToolExecutor:
                     )
 
                 # ------------------------------------------------------------
-                # Output Validation
+                # Output Validation (Contract Enforcement)
                 # ------------------------------------------------------------
                 output = self._out_validator.validate(tool_name, raw_output)
 
@@ -191,6 +150,33 @@ class ToolExecutor:
             tool.version,
             "Unknown execution state",
             start,
+        )
+
+    # ============================================================
+    # Output Normalization (Contract-Driven)
+    # ============================================================
+
+    def _normalize_output(self, tool, generated_output):
+
+        # LLM returned structured output
+        if isinstance(generated_output, dict):
+            return generated_output
+
+        # LLM returned raw string → wrap according to output_schema
+        if isinstance(generated_output, str):
+
+            schema_fields = list(tool.output_schema.keys())
+
+            if len(schema_fields) != 1:
+                raise RuntimeError(
+                    f"Tool '{tool.name}' expects structured output "
+                    f"{schema_fields}, but received raw string."
+                )
+
+            return {schema_fields[0]: generated_output}
+
+        raise RuntimeError(
+            f"Unsupported output type from connector for tool '{tool.name}'"
         )
 
     # ============================================================

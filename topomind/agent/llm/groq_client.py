@@ -1,6 +1,9 @@
 import os
 import requests
+import logging
 from .llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 
 
 class GroqClient(LLMClient):
@@ -18,10 +21,26 @@ class GroqClient(LLMClient):
 
     def chat(self, prompt: str, strict: bool) -> str:
 
+        temperature = 0 if strict else 0.7
+
+        # --------------------------------------------------
+        # DEBUG: Outgoing Request
+        # --------------------------------------------------
+        logger.info("========== GROQ CLIENT ==========")
+        logger.info(f"Model: {self.model}")
+        logger.info(f"Strict mode: {strict}")
+        logger.info(f"Temperature: {temperature}")
+        logger.info(f"Prompt length: {len(prompt)}")
+        logger.debug(f"Prompt preview:\n{prompt[:2000]}")
+        logger.info("=================================")
+
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0 if strict else 0.7,
+            "messages": [
+                # System role is usually more stable for long instruction blocks
+                {"role": "system", "content": prompt}
+            ],
+            "temperature": temperature,
         }
 
         response = requests.post(
@@ -35,4 +54,14 @@ class GroqClient(LLMClient):
 
         response.raise_for_status()
 
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+
+        # --------------------------------------------------
+        # DEBUG: Incoming Response
+        # --------------------------------------------------
+        logger.info("----- GROQ RESPONSE -----")
+        logger.info(content)
+        logger.info("-------------------------")
+
+        return content

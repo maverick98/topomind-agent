@@ -11,8 +11,15 @@ from topomind.connectors.base import FakeConnector
 from topomind.connectors.rest_connector import RestConnector
 from topomind.connectors.ollama import OllamaConnector
 from topomind.connectors.groq import GroqConnector
+from topomind.connectors.cohere import CohereConnector
 
 import logging
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+logger = logging.getLogger("topomind.server")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,16 +27,18 @@ logging.basicConfig(
 )
 
 # ============================================================
-# PLANNER CONFIGURATION (SINGLE SOURCE OF TRUTH)
+# PLANNER CONFIGURATION
 # ============================================================
 
 PLANNER_TYPE = "llm"
-LLM_BACKEND = "groq"  # "ollama" or "groq"
+LLM_BACKEND = "cohere"  # "ollama" or "groq" or "cohere"
 
 if LLM_BACKEND == "ollama":
     PLANNER_MODEL = "phi3:mini"
 elif LLM_BACKEND == "groq":
     PLANNER_MODEL = "llama-3.1-8b-instant"
+elif LLM_BACKEND == "cohere":
+    PLANNER_MODEL = "command-a-03-2025"
 else:
     raise ValueError(f"Unsupported LLM_BACKEND: {LLM_BACKEND}")
 
@@ -40,16 +49,18 @@ else:
 class AgentManager:
 
     def __init__(self):
+        logger.info("[AGENT MANAGER] Initializing...")
         self.connectors = ConnectorManager()
         self.registry = ToolRegistry()
         self._initialize_core()
         self._build_agent()
+        logger.info("[AGENT MANAGER] Ready")
 
     def _initialize_core(self):
-        # Local fallback connector
+        logger.info("[AGENT MANAGER] Registering connectors")
+
         self.connectors.register("local", FakeConnector())
 
-        # Register LLM connector
         if LLM_BACKEND == "ollama":
             self.connectors.register(
                 "llm",
@@ -60,8 +71,24 @@ class AgentManager:
                 "llm",
                 GroqConnector(model=PLANNER_MODEL)
             )
+        elif LLM_BACKEND == "cohere":
+            self.connectors.register(
+                "llm",
+                CohereConnector(model=PLANNER_MODEL)
+            )
+
+        logger.info(
+            "[AGENT MANAGER] LLM connector registered | backend=%s | model=%s",
+            LLM_BACKEND,
+            PLANNER_MODEL
+        )
 
     def _build_agent(self):
+        logger.info(
+            "[AGENT MANAGER] Building agent | tool_count=%d",
+            len(self.registry)
+        )
+
         self.agent = TopoMindApp.create(
             planner_type=PLANNER_TYPE,
             model=PLANNER_MODEL,
@@ -71,23 +98,34 @@ class AgentManager:
         )
 
     def rebuild(self):
+        logger.info("[AGENT MANAGER] Rebuilding agent")
         self._build_agent()
 
     def get_agent(self):
         return self.agent
 
     def register_tool(self, tool: Tool):
+        logger.info(
+            "[AGENT MANAGER] Register tool | name=%s | strict=%s | model=%s",
+            tool.name,
+            tool.strict,
+            tool.execution_model
+        )
         self.registry.register(tool)
         self.rebuild()
 
     def register_connector(self, name: str, connector: Any):
+        logger.info(
+            "[AGENT MANAGER] Register connector | name=%s",
+            name
+        )
         self.connectors.register(name, connector)
         self.rebuild()
 
     def clear_tools(self):
+        logger.warning("[AGENT MANAGER] Clearing ALL tools")
         self.registry = ToolRegistry()
         self.rebuild()
-
 
 # ============================================================
 # Instantiate Manager
@@ -116,13 +154,11 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
 
-
 class QueryResponse(BaseModel):
     status: str
     tool: Optional[str]
     output: Optional[Any]
     error: Optional[str]
-
 
 class ToolRegistrationRequest(BaseModel):
     name: str
@@ -134,14 +170,12 @@ class ToolRegistrationRequest(BaseModel):
     strict: Optional[bool] = False
     execution_model: Optional[str] = ""
 
-
 class ConnectorRegistrationRequest(BaseModel):
     name: str
     type: str
     base_url: Optional[str] = None
     method: Optional[str] = "POST"
     timeout_seconds: Optional[int] = 10
-
 
 # ============================================================
 # Connector Factory
@@ -164,7 +198,6 @@ def create_connector(request: ConnectorRegistrationRequest):
 
     raise ValueError(f"Unsupported connector type: {request.type}")
 
-
 # ============================================================
 # Health
 # ============================================================
@@ -178,7 +211,6 @@ def health():
         "llm_backend": LLM_BACKEND,
     }
 
-
 # ============================================================
 # Capabilities
 # ============================================================
@@ -186,6 +218,12 @@ def health():
 @app.get("/capabilities")
 def capabilities():
     tools = manager.registry.list_tools()
+
+    logger.info(
+        "[CAPABILITIES] tool_count=%d | names=%s",
+        len(tools),
+        [t.name for t in tools]
+    )
 
     return {
         "tool_count": len(tools),
@@ -205,7 +243,6 @@ def capabilities():
         ]
     }
 
-
 # ============================================================
 # Query Endpoint
 # ============================================================
@@ -213,12 +250,16 @@ def capabilities():
 @app.post("/query", response_model=QueryResponse)
 def query_endpoint(request: QueryRequest):
     try:
+        logger.info(
+            "[QUERY] text='%s' | tools=%s",
+            request.query,
+            manager.registry.list_tool_names()
+        )
+
         result = manager.get_agent().handle_query(request.query)
 
-        # --------------------------------------------------
-        # If agent returned dict (failure path / legacy)
-        # --------------------------------------------------
         if isinstance(result, dict):
+            logger.info("[QUERY] Legacy result returned")
             return QueryResponse(
                 status=result.get("status", "failure"),
                 tool=result.get("tool_name"),
@@ -226,9 +267,12 @@ def query_endpoint(request: QueryRequest):
                 error=result.get("error"),
             )
 
-        # --------------------------------------------------
-        # Normal structured object
-        # --------------------------------------------------
+        logger.info(
+            "[QUERY] Completed | status=%s | tool=%s",
+            getattr(result, "status", "failure"),
+            getattr(result, "tool_name", None)
+        )
+
         return QueryResponse(
             status=getattr(result, "status", "failure"),
             tool=getattr(result, "tool_name", None),
@@ -236,11 +280,9 @@ def query_endpoint(request: QueryRequest):
             error=getattr(result, "error", None),
         )
 
-    except Exception as e:
-        logging.exception("Query execution failed")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
+    except Exception:
+        logger.exception("[QUERY] Execution failed")
+        raise HTTPException(status_code=500, detail="Internal error")
 
 # ============================================================
 # Register Tool
@@ -249,6 +291,14 @@ def query_endpoint(request: QueryRequest):
 @app.post("/register-tool")
 def register_tool(request: ToolRegistrationRequest):
     try:
+        logger.info(
+            "[REGISTER TOOL] name=%s | connector=%s | strict=%s | model=%s",
+            request.name,
+            request.connector,
+            request.strict,
+            request.execution_model
+        )
+
         tool = Tool(
             name=request.name,
             description=request.description,
@@ -262,15 +312,16 @@ def register_tool(request: ToolRegistrationRequest):
 
         manager.register_tool(tool)
 
-        return {
-            "status": "registered",
-            "tool": request.name,
-        }
+        logger.info(
+            "[REGISTER TOOL] Success | total_tools=%d",
+            len(manager.registry)
+        )
 
-    except Exception as e:
-        logging.exception("Tool registration failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "registered", "tool": request.name}
 
+    except Exception:
+        logger.exception("[REGISTER TOOL] Failed")
+        raise HTTPException(status_code=500, detail="Tool registration failed")
 
 # ============================================================
 # Register Connector
@@ -279,18 +330,20 @@ def register_tool(request: ToolRegistrationRequest):
 @app.post("/register-connector")
 def register_connector(request: ConnectorRegistrationRequest):
     try:
+        logger.info(
+            "[REGISTER CONNECTOR] name=%s | type=%s",
+            request.name,
+            request.type
+        )
+
         connector = create_connector(request)
         manager.register_connector(request.name, connector)
 
-        return {
-            "status": "registered",
-            "connector": request.name,
-        }
+        return {"status": "registered", "connector": request.name}
 
-    except Exception as e:
-        logging.exception("Connector registration failed")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    except Exception:
+        logger.exception("[REGISTER CONNECTOR] Failed")
+        raise HTTPException(status_code=500, detail="Connector registration failed")
 
 # ============================================================
 # Clear Tools
@@ -298,5 +351,6 @@ def register_connector(request: ConnectorRegistrationRequest):
 
 @app.post("/clear-tools")
 def clear_tools():
+    logger.warning("[CLEAR TOOLS] Clearing all tools")
     manager.clear_tools()
     return {"status": "all tools cleared"}

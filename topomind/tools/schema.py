@@ -1,27 +1,11 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Tuple
+import json
+import hashlib
 
 
 @dataclass(frozen=True)
 class Tool:
-    """
-    Versioned declarative contract describing an agent capability.
-
-    A Tool defines WHAT action can be performed, while execution details
-    are delegated to a Connector. This object serves as the canonical
-    contract between all runtime layers:
-
-        Planner → ArgumentValidator → ToolExecutor → Connector → Memory
-
-    A Tool is immutable and versioned. Any change to its input or output
-    schema constitutes a contract change and must increment `version`.
-    Historical versions are preserved for schema migration and replay.
-
-    Enhancements (Backward Compatible)
-    -----------------------------------
-    - prompt: Model-facing execution contract (optional)
-    - strict: Indicates whether planner must strictly obey tool prompt
-    """
 
     # ------------------------------------------------------------------
     # Core Identity
@@ -39,17 +23,24 @@ class Tool:
     output_schema: Dict[str, Any]
 
     # ------------------------------------------------------------------
-    # Model-Facing Execution Contract (NEW — Optional)
+    # Artifact Flow Metadata
+    # ------------------------------------------------------------------
+
+    produces: Tuple[str, ...] = field(default_factory=tuple)
+    consumes: Tuple[str, ...] = field(default_factory=tuple)
+
+    # ------------------------------------------------------------------
+    # Model-Facing Execution Contract
     # ------------------------------------------------------------------
 
     prompt: str = ""
     strict: bool = False
 
     # ------------------------------------------------------------------
-    # Model Routing (NEW — Optional)
+    # Model Routing
     # ------------------------------------------------------------------
 
-    execution_model: str = ""  # empty = use system default
+    execution_model: str = ""
 
     # ------------------------------------------------------------------
     # Schema Evolution
@@ -70,20 +61,13 @@ class Tool:
     # Observability
     # ------------------------------------------------------------------
 
-    # NOTE: Tuple used instead of List to preserve immutability
     tags: Tuple[str, ...] = field(default_factory=tuple)
 
     # ------------------------------------------------------------------
-    # Validation Layer (Safe, Non-Breaking)
+    # Validation Layer
     # ------------------------------------------------------------------
 
     def __post_init__(self):
-        """
-        Lightweight invariant checks.
-
-        Does NOT modify state (frozen dataclass).
-        Raises early if contract is malformed.
-        """
 
         if not self.name or not isinstance(self.name, str):
             raise ValueError("Tool name must be a non-empty string.")
@@ -97,6 +81,12 @@ class Tool:
         if not isinstance(self.output_schema, dict):
             raise TypeError("output_schema must be a dictionary.")
 
+        if not isinstance(self.produces, tuple):
+            raise TypeError("produces must be a tuple.")
+
+        if not isinstance(self.consumes, tuple):
+            raise TypeError("consumes must be a tuple.")
+
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive.")
 
@@ -105,18 +95,12 @@ class Tool:
 
         if not isinstance(self.version, str):
             raise TypeError("version must be a string.")
-        
+
         if self.execution_model and not isinstance(self.execution_model, str):
             raise TypeError("execution_model must be a string.")
 
-        # ------------------------------------------------------------------
-        # Consistency Enforcement (Safe, Non-Breaking)
-        # ------------------------------------------------------------------
-
         if not self.retryable and self.max_retries > 0:
-            raise ValueError(
-                "max_retries must be 0 when retryable is False."
-            )
+            raise ValueError("max_retries must be 0 when retryable is False.")
 
     # ------------------------------------------------------------------
     # Derived Properties
@@ -124,16 +108,74 @@ class Tool:
 
     @property
     def key(self) -> str:
-        """
-        Unique identifier combining tool name and version.
-
-        Used by SchemaRegistry to track historical contract versions.
-        """
         return f"{self.name}:{self.version}"
 
     @property
     def is_strict(self) -> bool:
-        """
-        Indicates whether this tool enforces strict planner adherence.
-        """
         return self.strict
+
+    # ------------------------------------------------------------------
+    # Serialization / Observability
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Returns canonical dictionary representation of the Tool contract.
+        Safe for logging, JSON, hashing, replay.
+        """
+
+        data = asdict(self)
+
+        # Convert tuples to lists for JSON safety
+        data["produces"] = list(self.produces)
+        data["consumes"] = list(self.consumes)
+        data["tags"] = list(self.tags)
+
+        return data
+
+    @property
+    def contract_hash(self) -> str:
+        """
+        Stable hash of entire tool contract.
+        Detects schema drift across deployments.
+        """
+
+        canonical = json.dumps(self.to_dict(), sort_keys=True)
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def to_debug_string(self) -> str:
+        """
+        Multi-line full contract dump for debugging.
+        """
+
+        prompt_block = self.prompt.strip() if self.prompt else "[EMPTY]"
+
+        return (
+            f"\n"
+            f"================ TOOL CONTRACT =================\n"
+            f"Name              : {self.name}\n"
+            f"Version           : {self.version}\n"
+            f"Key               : {self.key}\n"
+            f"Contract Hash     : {self.contract_hash}\n"
+            f"\n"
+            f"Connector         : {self.connector_name}\n"
+            f"Strict            : {self.strict}\n"
+            f"Execution Model   : {self.execution_model or 'SYSTEM DEFAULT'}\n"
+            f"\n"
+            f"Timeout (sec)     : {self.timeout_seconds}\n"
+            f"Retryable         : {self.retryable}\n"
+            f"Max Retries       : {self.max_retries}\n"
+            f"Side Effect       : {self.side_effect}\n"
+            f"\n"
+            f"Produces          : {self.produces}\n"
+            f"Consumes          : {self.consumes}\n"
+            f"Tags              : {self.tags}\n"
+            f"\n"
+            f"Input Schema      : {self.input_schema}\n"
+            f"Output Schema     : {self.output_schema}\n"
+            f"\n"
+            f"Prompt Length     : {len(self.prompt)}\n"
+            f"Prompt:\n"
+            f"{prompt_block}\n"
+            f"=================================================\n"
+        )
