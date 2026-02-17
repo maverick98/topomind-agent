@@ -65,7 +65,7 @@ class ToolExecutor:
                 working_args = dict(validated_args)
 
                 # ============================================================
-                # CASE 1: Tool has execution_model (LLM-assisted tool)
+                # CASE 1: LLM-ASSISTED TOOL
                 # ============================================================
                 if tool.execution_model:
 
@@ -76,21 +76,16 @@ class ToolExecutor:
                             f"Tool '{tool.name}' has execution_model but no prompt defined"
                         )
 
-                    # Render prompt
-                    prompt_text = tool.prompt
-                    for key, value in working_args.items():
-                        prompt_text = prompt_text.replace(
-                            "{" + key + "}",
-                            str(value)
-                        )
-
                     logger.info(
                         f"[EXECUTION MODEL] Using model: {tool.execution_model}"
                     )
 
+                    # 🔹 Structured execution
                     generated_output = llm_connector.execute(
-                        prompt_text,
+                        system_prompt=tool.prompt,
+                        user_args=working_args,
                         model=tool.execution_model,
+                        timeout=timeout,
                     )
 
                     raw_output = self._normalize_output(
@@ -99,7 +94,7 @@ class ToolExecutor:
                     )
 
                 # ============================================================
-                # CASE 2: Pure deterministic tool
+                # CASE 2: PURE DETERMINISTIC TOOL
                 # ============================================================
                 else:
                     raw_output = connector.execute(
@@ -109,7 +104,7 @@ class ToolExecutor:
                     )
 
                 # ------------------------------------------------------------
-                # Output Validation (Contract Enforcement)
+                # Output Validation
                 # ------------------------------------------------------------
                 output = self._out_validator.validate(tool_name, raw_output)
 
@@ -153,16 +148,16 @@ class ToolExecutor:
         )
 
     # ============================================================
-    # Output Normalization (Contract-Driven)
+    # Output Normalization
     # ============================================================
 
     def _normalize_output(self, tool, generated_output):
 
-        # LLM returned structured output
+        # LLM returned structured dict
         if isinstance(generated_output, dict):
             return generated_output
 
-        # LLM returned raw string → wrap according to output_schema
+        # LLM returned raw string → wrap according to schema
         if isinstance(generated_output, str):
 
             schema_fields = list(tool.output_schema.keys())
