@@ -1,0 +1,20 @@
+{
+  "hawk_runtime": {
+    "metadata": {
+      "name": "hawk_runtime",
+      "type": "rest",
+      "base_url": "http://127.0.0.1:9000",
+      "method": "POST",
+      "timeout_seconds": 10
+    },
+    "status": "active"
+  },
+  "local": {
+    "metadata": {},
+    "status": "active"
+  },
+  "llm": {
+    "metadata": {},
+    "status": "active"
+  }
+}

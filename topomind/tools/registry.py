@@ -24,7 +24,7 @@ class ToolRegistry:
         logger.info("[TOOL REGISTRY] Initialized (empty)")
 
     # ------------------------------------------------------------------
-    # Registration
+    # Strict Registration (Original Behavior Preserved)
     # ------------------------------------------------------------------
 
     def register(self, tool: Tool) -> None:
@@ -43,8 +43,63 @@ class ToolRegistry:
                 len(self._tools)
             )
 
-            # Full contract dump
             logger.info(tool.to_debug_string())
+
+    # ------------------------------------------------------------------
+    # Idempotent Registration (NEW)
+    # ------------------------------------------------------------------
+
+    def register_or_update(self, tool: Tool) -> str:
+        """
+        Idempotent registration.
+        - If tool does not exist → register
+        - If tool exists and contract unchanged → no-op
+        - If tool exists and contract changed → replace
+
+        Returns:
+            "registered" | "updated" | "unchanged"
+        """
+
+        if not tool.name or not isinstance(tool.name, str):
+            raise ValueError("Tool must have a valid string name.")
+
+        with self._lock:
+            existing = self._tools.get(tool.name)
+
+            # First-time registration
+            if existing is None:
+                self._tools[tool.name] = tool
+
+                logger.info(
+                    "[TOOL REGISTRY] Tool registered | total=%d",
+                    len(self._tools)
+                )
+                logger.info(tool.to_debug_string())
+
+                return "registered"
+
+            # Contract unchanged → no-op
+            if existing.contract_hash == tool.contract_hash:
+                logger.info(
+                    "[TOOL REGISTRY] Tool unchanged: %s",
+                    tool.name
+                )
+                return "unchanged"
+
+            # Contract changed → update
+            self._tools[tool.name] = tool
+
+            logger.info(
+                "[TOOL REGISTRY] Tool updated: %s",
+                tool.name
+            )
+            logger.info(tool.to_debug_string())
+
+            return "updated"
+
+    # ------------------------------------------------------------------
+    # Bulk Registration (Strict)
+    # ------------------------------------------------------------------
 
     def register_many(self, tools: Iterable[Tool]) -> None:
 
@@ -133,11 +188,9 @@ class ToolRegistry:
     # ------------------------------------------------------------------
 
     def get_input_schema(self, tool_name: str) -> Dict[str, Any]:
-        logger.debug("[TOOL REGISTRY] get_input_schema(%s)", tool_name)
         return deepcopy(self.get(tool_name).input_schema)
 
     def get_output_schema(self, tool_name: str) -> Dict[str, Any]:
-        logger.debug("[TOOL REGISTRY] get_output_schema(%s)", tool_name)
         return deepcopy(self.get(tool_name).output_schema)
 
     # ------------------------------------------------------------------
